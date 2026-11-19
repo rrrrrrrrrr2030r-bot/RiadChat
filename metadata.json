@@ -1,0 +1,6 @@
+{
+  "name": "رياض شات",
+  "description": "منصة رياض شات للغرف الصوتية المباشرة، صالة الألعاب التفاعلية، والوكالات المعتمدة.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
