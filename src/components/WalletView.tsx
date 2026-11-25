@@ -28,6 +28,7 @@ export const WalletView: React.FC = () => {
   const {
     state,
     currentUser,
+    isApprovedAgent,
     walletInitialTab,
     setActiveTab,
     exchangeDiamondsToGold,
@@ -373,13 +374,15 @@ export const WalletView: React.FC = () => {
               استبدال الذهبية
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('agencies')}
-              className="w-full h-13 rounded-full bg-[#15D16B] hover:bg-[#11BC5F] text-white font-display font-bold text-base shadow-md shadow-emerald-400/25 cursor-pointer transition-transform active:scale-[0.99]"
-            >
-              تحويل الاموال
-            </button>
+            {isApprovedAgent && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('agencies')}
+                className="w-full h-13 rounded-full bg-[#15D16B] hover:bg-[#11BC5F] text-white font-display font-bold text-base shadow-md shadow-emerald-400/25 cursor-pointer transition-transform active:scale-[0.99]"
+              >
+                تحويل الاموال
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -438,14 +441,16 @@ export const WalletView: React.FC = () => {
               <span>موقع الشحن</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('agencies')}
-              className="w-full h-12 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 px-4 flex items-center justify-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer shadow-xs"
-            >
-              <Briefcase className="w-4 h-4 text-amber-500" />
-              <span>وكيل الشحن</span>
-            </button>
+            {isApprovedAgent && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('agencies')}
+                className="w-full h-12 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 px-4 flex items-center justify-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer shadow-xs"
+              >
+                <Briefcase className="w-4 h-4 text-amber-500" />
+                <span>وكيل الشحن</span>
+              </button>
+            )}
 
             <button
               type="button"

@@ -12,6 +12,7 @@ import {
   Moon,
   Palette,
   Power,
+  RefreshCw,
   Settings,
   Share2,
   Trash2,
@@ -19,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { forceRefreshApp } from '../utils/cacheBuster';
 import {
   APP_ICON_PATH,
   AVATAR_AHMED_PATH,
@@ -98,6 +100,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   const {
     state,
     currentUser,
+    isPrimaryAdmin,
     minimizeRoom,
     setActiveRoomId,
     updateRoomSettings,
@@ -108,7 +111,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   } = useApp();
 
   const canManage =
-    currentUser.role === 'OWNER' ||
+    isPrimaryAdmin ||
     currentUser.role === 'SUPERVISOR' ||
     room.ownerId === currentUser.id;
 
@@ -245,10 +248,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             })}
           </div>
 
-          {canManage && onOpenInsight && (
+          {isPrimaryAdmin && onOpenInsight && (
             <div className="pt-2 border-t border-white/15 space-y-2.5">
               <div className="text-center text-[11px] font-bold text-violet-200/85">
-                تحليلات ومراقبة المالك
+                تحليلات ومراقبة الإدارة الأساسية (ID: 900)
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <button
@@ -628,14 +631,14 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         <button
           type="button"
           onClick={() => {
-            setTextDraft(room.password || '');
+            setTextDraft('');
             setEditor('password');
           }}
           className="w-full px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-white/[0.03] transition-colors cursor-pointer"
         >
           <span className="text-sm font-medium text-white shrink-0">كلمة مرور الغرفة</span>
           <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-            <span>{room.password ? '••••' : ''}</span>
+            <span>{room.hasPassword || room.password ? '••••' : ''}</span>
             <ChevronLeft className="w-4 h-4 shrink-0" />
           </div>
         </button>
@@ -776,7 +779,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           </button>
         )}
 
-        {onOpenInsight && (
+        {isPrimaryAdmin && onOpenInsight && (
           <>
             <button
               type="button"
@@ -825,15 +828,17 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
           </div>
         </button>
 
-        {/* 14. دعم الغرفة */}
-        <button
-          type="button"
-          onClick={() => setEditor('boost')}
-          className="w-full px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-white/[0.03] transition-colors cursor-pointer"
-        >
-          <span className="text-sm font-medium text-white">دعم الغرفة</span>
-          <ChevronLeft className="w-4 h-4 text-slate-400 shrink-0" />
-        </button>
+        {/* 14. دعم الغرفة (للإدارة الأساسية ID: 900 فقط) */}
+        {isPrimaryAdmin && (
+          <button
+            type="button"
+            onClick={() => setEditor('boost')}
+            className="w-full px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-white/[0.03] transition-colors cursor-pointer"
+          >
+            <span className="text-sm font-medium text-white">دعم الغرفة</span>
+            <ChevronLeft className="w-4 h-4 text-slate-400 shrink-0" />
+          </button>
+        )}
 
         {/* 15. قائمة الحظر */}
         <button
@@ -850,6 +855,22 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
             )}
             <ChevronLeft className="w-4 h-4 shrink-0" />
           </div>
+        </button>
+
+        {/* تحديث التطبيق ومسح الكاش القديم */}
+        <button
+          type="button"
+          onClick={() => {
+            showToast('جارٍ مسح التخزين المؤقت وتحميل أحدث نسخة من رياض شات...', 'info');
+            void forceRefreshApp();
+          }}
+          className="w-full px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-sky-500/10 transition-colors cursor-pointer"
+        >
+          <span className="text-sm font-medium text-sky-300 flex items-center gap-2">
+            <RefreshCw className="w-4 h-4" />
+            <span>تحديث التطبيق ومسح الكاش</span>
+          </span>
+          <ChevronLeft className="w-4 h-4 text-sky-300 shrink-0" />
         </button>
 
         {/* 16. حذف هذه الغرف */}

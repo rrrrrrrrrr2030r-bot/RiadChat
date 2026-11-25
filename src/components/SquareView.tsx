@@ -12,7 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { AVATAR_AHMED_PATH, AVATAR_NAWAF_PATH, AVATAR_RIAD_PATH, COVER_OCEAN_PATH } from '../data/seedData';
+import { AVATAR_RIAD_PATH } from '../data/seedData';
 import { formatCompactNumber } from '../utils/format';
 
 interface SquarePost {
@@ -37,44 +37,17 @@ const INITIAL_POSTS: SquarePost[] = [
     authorName: 'رياض | Riad',
     authorAvatar: AVATAR_RIAD_PATH,
     authorFlag: '🇾🇪',
-    authorLevel: 98,
-    time: 'منذ 12 دقيقة',
-    content: 'حياكم الله جميعاً في سهرة وكالة رياض الليلة — تحديات حية وجوائز كبرى للداعمين على المايك! 👑✨',
-    likes: 412,
+    authorLevel: 1,
+    time: 'الآن',
+    content: 'حياكم الله جميعاً في الانطلاقة الرسمية لمنصة رياض شات — شاركوا لحظاتكم وانضموا للغرف الصوتية المباشرة! 👑✨',
+    likes: 0,
     liked: false,
     roomId: 'room-900',
-  },
-  {
-    id: 'post-2',
-    authorId: '51115',
-    authorName: 'وكالة نواف للشحن',
-    authorAvatar: AVATAR_NAWAF_PATH,
-    authorFlag: '🇾🇪',
-    authorLevel: 85,
-    time: 'منذ 35 دقيقة',
-    content: 'بونص الشحن الفوري +25% متاح الآن لجميع الباقات عبر الوكلاء المعتمدين! 🚀💎',
-    image: COVER_OCEAN_PATH,
-    likes: 289,
-    liked: true,
-    roomId: 'room-51115',
-  },
-  {
-    id: 'post-3',
-    authorId: '200016',
-    authorName: 'الوكيل أحمد',
-    authorAvatar: AVATAR_AHMED_PATH,
-    authorFlag: '🇸🇦',
-    authorLevel: 74,
-    time: 'منذ ساعة',
-    content: 'مبارك لأبطال جولات الـ PK اليوم، استمروا بالتفاعل لرفع مستواكم في الساحة!',
-    likes: 164,
-    liked: false,
-    roomId: 'room-882001',
   },
 ];
 
 export const SquareView: React.FC = () => {
-  const { currentUser, setActiveTab, setActiveRoomId, openWallet, showToast } = useApp();
+  const { currentUser, isApprovedAgent, setActiveTab, setActiveRoomId, openWallet, showToast } = useApp();
   const [posts, setPosts] = useState<SquarePost[]>(INITIAL_POSTS);
   const [newPostText, setNewPostText] = useState('');
 
@@ -130,14 +103,25 @@ export const SquareView: React.FC = () => {
             <Diamond className="w-4 h-4 text-amber-500" />
             <span>المحفظة والشحن</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('agencies')}
-            className="rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 px-3 py-2.5 flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-800 cursor-pointer"
-          >
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>تحويل الأموال</span>
-          </button>
+          {isApprovedAgent ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('agencies')}
+              className="rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 px-3 py-2.5 flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-800 cursor-pointer"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>تحويل الأموال</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setActiveTab('rooms')}
+              className="rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 px-3 py-2.5 flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-800 cursor-pointer"
+            >
+              <Flame className="w-4 h-4 text-emerald-600" />
+              <span>الغرف المباشرة</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab('store')}

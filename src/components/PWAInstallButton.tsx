@@ -50,7 +50,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
         }`}
       >
         <Download className="w-3.5 h-3.5 shrink-0" />
-        <span className={compact ? 'hidden min-[380px]:inline' : 'inline'}>تثبيت التطبيق</span>
+        <span className={compact ? 'hidden min-[420px]:inline' : 'inline'}>تثبيت التطبيق</span>
       </button>
 
       {guideOpen && (

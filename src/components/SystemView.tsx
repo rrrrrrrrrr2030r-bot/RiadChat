@@ -3,9 +3,11 @@ import {
   Activity,
   BellRing,
   Check,
+  Clock,
   Coins,
   Copy,
   Crown,
+  Database,
   Flame,
   Megaphone,
   Moon,
@@ -18,6 +20,7 @@ import {
   UserPlus,
   Users,
   Wrench,
+  X,
   Zap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -25,8 +28,10 @@ import { DiceMultiplier, GameLuckMode, ModeratorRecord } from '../types';
 import { formatCompactNumber, formatFullGold } from '../utils/format';
 import { RoomEngagementCard } from './RoomEngagementCard';
 import { ActiveHostsPanel } from './ActiveHostsPanel';
+import { DataOpsPanel } from './DataOpsPanel';
+import { OwnerRecoveryAuditCard } from './OwnerRecoveryAuditCard';
 
-type SystemTopTab = 'quick' | 'moderators' | 'superadmin';
+type SystemTopTab = 'quick' | 'moderators' | 'superadmin' | 'ops';
 type ModSubTab = 'create' | 'workspace' | 'list';
 type SuperSubTab = 'settings' | 'users' | 'agencies' | 'rooms' | 'reports' | 'broadcast';
 
@@ -40,6 +45,7 @@ const MOD_ROLES = [
 export const SystemView: React.FC = () => {
   const {
     state,
+    isPrimaryAdmin,
     setActiveTab,
     setActiveRoomId,
     updateAnnouncement,
@@ -58,6 +64,8 @@ export const SystemView: React.FC = () => {
     resolveReport,
     toggleUserBan,
     verifyUserAgent,
+    approveAgencyRequest,
+    rejectAgencyRequest,
     adjustUserGold,
     resetDemoData,
     showToast,
@@ -76,11 +84,12 @@ export const SystemView: React.FC = () => {
 
   // Moderator creation form
   const [modName, setModName] = useState('');
-  const [modId, setModId] = useState('8775');
+  const [modId, setModId] = useState('');
   const [modRole, setModRole] = useState(MOD_ROLES[0]);
-  const [modWhatsapp, setModWhatsapp] = useState('775367122');
+  const [modWhatsapp, setModWhatsapp] = useState('');
   const [modCustody, setModCustody] = useState('50000000');
   const [lastCreatedMod, setLastCreatedMod] = useState<ModeratorRecord | null>(null);
+  const [pendingArchiveMod, setPendingArchiveMod] = useState<ModeratorRecord | null>(null);
 
   const handleUpdateBanner = (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,6 +133,12 @@ export const SystemView: React.FC = () => {
   };
 
   const pendingReportsCount = state.reports.filter((r) => r.status === 'pending').length;
+  const pendingAgencyRequests = state.agencyRequests.filter((r) => r.status === 'pending');
+  const totalSuperAlerts = pendingReportsCount + pendingAgencyRequests.length;
+
+  if (!isPrimaryAdmin) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -150,13 +165,13 @@ export const SystemView: React.FC = () => {
             </button>
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-l from-violet-600 to-blue-600 text-white text-xs font-extrabold shadow-md shadow-violet-600/30">
               <Crown className="w-3.5 h-3.5" />
-              <span>إدارة رياض ID: 10</span>
+              <span>إدارة رياض ID: 900</span>
             </span>
           </div>
         </div>
 
-        {/* 3 Main System Sub-Views */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* 4 Main System Sub-Views */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <button
             type="button"
             onClick={() => setTopTab('quick')}
@@ -180,7 +195,7 @@ export const SystemView: React.FC = () => {
             }`}
           >
             <Shield className="w-4 h-4 shrink-0" />
-            <span className="truncate">نظام المشرفين والأدمن</span>
+            <span className="truncate">المشرفين والأدمن</span>
           </button>
 
           <button
@@ -194,8 +209,21 @@ export const SystemView: React.FC = () => {
           >
             <ShieldAlert className="w-4 h-4 shrink-0" />
             <span className="truncate">
-              الإدارة والبلاغات {pendingReportsCount > 0 ? `(${pendingReportsCount})` : ''}
+              الإدارة والطلبات {totalSuperAlerts > 0 ? `(${totalSuperAlerts})` : ''}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTopTab('ops')}
+            className={`min-h-[44px] px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+              topTab === 'ops'
+                ? 'bg-gradient-to-l from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/25'
+                : 'bg-[#0F0B28] text-emerald-200 hover:text-white border border-emerald-500/35'
+            }`}
+          >
+            <Database className="w-4 h-4 shrink-0" />
+            <span className="truncate">حماية البيانات والضغط</span>
           </button>
         </div>
       </div>
@@ -705,8 +733,8 @@ export const SystemView: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteModerator(mod.id)}
-                        aria-label="حذف المشرف"
+                        onClick={() => setPendingArchiveMod(mod)}
+                        aria-label="أرشفة المشرف"
                         className="p-2 rounded-lg bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -741,7 +769,13 @@ export const SystemView: React.FC = () => {
                 [
                   { id: 'settings', label: 'الإعدادات' },
                   { id: 'users', label: 'المستخدمين' },
-                  { id: 'agencies', label: 'الوكالات' },
+                  {
+                    id: 'agencies',
+                    label:
+                      pendingAgencyRequests.length > 0
+                        ? `الوكالات (${pendingAgencyRequests.length})`
+                        : 'الوكالات',
+                  },
                   { id: 'rooms', label: 'الغرف' },
                   { id: 'reports', label: `البلاغات (${pendingReportsCount})` },
                   { id: 'broadcast', label: 'البث العام' },
@@ -859,7 +893,7 @@ export const SystemView: React.FC = () => {
                   className="min-h-[40px] px-4 rounded-xl bg-[#201652] hover:bg-[#2A1D69] text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>استعادة البيانات الافتراضية</span>
+                  <span>إعادة تهيئة البيانات الرسمية</span>
                 </button>
               </div>
             </div>
@@ -936,33 +970,116 @@ export const SystemView: React.FC = () => {
           )}
 
           {superSubTab === 'agencies' && (
-            <div className="rounded-2xl bg-[#161038] border border-violet-500/30 p-4 sm:p-5 space-y-3">
-              <h3 className="text-sm font-display font-bold text-white">الوكالات المعتمدة في السيرفر</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {state.users
-                  .filter((u) => u.isVerifiedAgent)
-                  .map((agent) => (
-                    <div
-                      key={agent.id}
-                      className="rounded-xl bg-[#0F0B28] border border-blue-400/40 p-3.5 flex items-center justify-between gap-2"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={agent.avatar}
-                          alt={agent.name}
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-10 rounded-xl object-cover"
-                        />
-                        <div>
-                          <div className="font-bold text-sm text-white">{agent.name}</div>
-                          <div className="text-xs text-slate-400 font-mono-num">
-                            ID:{agent.id} · {formatCompactNumber(agent.gold)} ذهب
+            <div className="space-y-4">
+              {/* Pending Agency Open Requests Queue (Owner ID: 900 Approval Required) */}
+              <div className="rounded-2xl bg-[#161038] border border-amber-400/45 p-4 sm:p-5 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <h3 className="text-sm sm:text-base font-display font-bold text-white flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-300" />
+                    <span>طلبات فتح الوكالات بانتظار موافقة المالك ({pendingAgencyRequests.length})</span>
+                  </h3>
+                  <span className="text-[11px] font-bold text-amber-200">
+                    لا تُفتح أي وكالة إلا بموافقة ID: 900
+                  </span>
+                </div>
+
+                {pendingAgencyRequests.length === 0 ? (
+                  <div className="rounded-xl bg-[#0F0B28] border border-violet-500/25 p-5 text-center text-xs text-slate-400">
+                    لا توجد طلبات فتح وكالات معلقة حالياً. عند تقديم أي مستخدم جديد لطلب فتح وكالة سيظهر هنا للموافقة أو الرفض.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {pendingAgencyRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="rounded-xl bg-[#0F0B28] border border-amber-400/40 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={req.userAvatar}
+                            alt={req.userName}
+                            referrerPolicy="no-referrer"
+                            className="w-11 h-11 rounded-xl object-cover border border-amber-300/60 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-white truncate">
+                              {req.agencyTitle}
+                            </div>
+                            <div className="text-xs text-slate-300 font-mono-num">
+                              مقدم الطلب: {req.userName} (ID: {req.userId}) · {req.createdAt}
+                            </div>
+                            {req.contactNote && (
+                              <div className="text-[11px] text-amber-200/90 mt-0.5 truncate">
+                                ملاحظة: {req.contactNote}
+                              </div>
+                            )}
                           </div>
                         </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => void approveAgencyRequest(req.id)}
+                            className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>موافقة وفتح الوكالة</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void rejectAgencyRequest(req.id)}
+                            className="min-h-[38px] px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>رفض</span>
+                          </button>
+                        </div>
                       </div>
-                      <span className="text-xs font-bold text-sky-300">معتمدة ✓</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Approved Agencies List */}
+              <div className="rounded-2xl bg-[#161038] border border-violet-500/30 p-4 sm:p-5 space-y-3">
+                <h3 className="text-sm font-display font-bold text-white">الوكالات المعتمدة في السيرفر</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {state.users
+                    .filter((u) => u.isVerifiedAgent)
+                    .map((agent) => (
+                      <div
+                        key={agent.id}
+                        className="rounded-xl bg-[#0F0B28] border border-blue-400/40 p-3.5 flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={agent.avatar}
+                            alt={agent.name}
+                            referrerPolicy="no-referrer"
+                            className="w-10 h-10 rounded-xl object-cover shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-white truncate">{agent.name}</div>
+                            <div className="text-xs text-slate-400 font-mono-num">
+                              ID:{agent.id} · {formatCompactNumber(agent.gold)} ذهب
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs font-bold text-sky-300">معتمدة ✓</span>
+                          {agent.id !== '900' && (
+                            <button
+                              type="button"
+                              onClick={() => verifyUserAgent(agent.id)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold cursor-pointer"
+                            >
+                              إلغاء الاعتماد
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
           )}
@@ -1081,6 +1198,62 @@ export const SystemView: React.FC = () => {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 4: Data Protection, Migrations, Owner Recovery Audit & High-Traffic Operations */}
+      {topTab === 'ops' && (
+        <div className="space-y-4">
+          <OwnerRecoveryAuditCard />
+          <DataOpsPanel />
+        </div>
+      )}
+
+      {/* Safe Archive (Soft-Delete) Confirmation Modal for Moderators */}
+      {pendingArchiveMod && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-[#161038] border border-amber-400/50 p-5 space-y-4 text-white shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-display font-extrabold">
+                  تأكيد أرشفة المشرف (حذف آمن)
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  سيتم أرشفة المشرف <strong>{pendingArchiveMod.name}</strong> (ID:{' '}
+                  <span className="font-mono-num">{pendingArchiveMod.specialId}</span>) مع حفظ نسخة
+                  استرجاع تلقائية قبل التنفيذ. لن يتم المسح النهائي ويمكنك استعادته في أي وقت من
+                  تبويب «حماية البيانات والضغط».
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingArchiveMod(null)}
+                className="min-h-[42px] px-4 rounded-xl bg-[#0F0B28] hover:bg-[#1E164A] border border-violet-500/30 text-slate-200 text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = pendingArchiveMod.id;
+                  setPendingArchiveMod(null);
+                  deleteModerator(id);
+                }}
+                className="min-h-[42px] px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold cursor-pointer"
+              >
+                تأكيد الأرشفة الآمنة
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

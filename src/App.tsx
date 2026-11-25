@@ -4,9 +4,11 @@
  */
 
 import React from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { ShieldAlert, X } from 'lucide-react';
+import { Clock, ShieldAlert, X } from 'lucide-react';
 import { AppProvider, useApp } from './context/AppContext';
+import { queryClient } from './lib/queryClient';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { AnnouncementBanner } from './components/AnnouncementBanner';
@@ -24,6 +26,9 @@ import { StoreView } from './components/StoreView';
 import { SystemView } from './components/SystemView';
 import { ProfileView } from './components/ProfileView';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { AuthScreen } from './components/AuthScreen';
+import { AppUpdateBanner } from './components/AppUpdateBanner';
+import { LiveNotificationBanner } from './components/LiveNotificationBanner';
 
 const MainShell: React.FC = () => {
   const {
@@ -34,11 +39,94 @@ const MainShell: React.FC = () => {
     restoreMinimizedRoom,
     closeMinimizedRoom,
     currentUser,
+    isPrimaryAdmin,
+    isAuthenticated,
+    authLoading,
     state,
     toasts,
+    trafficSurgeRetrySec,
+    dismissTrafficSurgeNotice,
   } = useApp();
 
-  const isOwner = currentUser.role === 'OWNER';
+  const renderTrafficSurgeBanner = () => {
+    if (trafficSurgeRetrySec <= 0) return null;
+    const mins = String(Math.floor(trafficSurgeRetrySec / 60)).padStart(2, '0');
+    const secs = String(trafficSurgeRetrySec % 60).padStart(2, '0');
+    return (
+      <div
+        role="status"
+        className="w-full bg-amber-500 text-slate-950 border-b border-amber-600/40 px-4 py-2.5 flex items-center justify-between gap-3 text-xs sm:text-sm font-bold shadow-sm"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Clock className="w-4 h-4 shrink-0" />
+          <span className="truncate">
+            الموقع يشهد إقبالاً عالياً الآن — جرب بعد دقيقتين (المتبقي{' '}
+            <span className="font-mono-num tabular-nums">
+              {mins}:{secs}
+            </span>
+            )
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={dismissTrafficSurgeNotice}
+          aria-label="إغلاق التنبيه"
+          className="w-7 h-7 rounded-lg bg-slate-950/10 hover:bg-slate-950/20 flex items-center justify-center shrink-0 cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  };
+
+  const isOwner = isPrimaryAdmin;
+
+  if (authLoading) {
+    return (
+      <div
+        dir="rtl"
+        className="min-h-screen flex flex-col items-center justify-center bg-[#09071A] text-white gap-3"
+      >
+        <span className="w-10 h-10 rounded-full border-3 border-violet-500 border-t-transparent animate-spin" />
+        <span className="text-sm font-display font-bold text-indigo-200">
+          جارٍ التحقق من جلسة رياض شات...
+        </span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <AppUpdateBanner />
+        {renderTrafficSurgeBanner()}
+        <AuthScreen />
+        <div className="pointer-events-none fixed top-16 inset-x-0 z-50 flex flex-col items-center gap-2 px-4">
+          <AnimatePresence>
+            {toasts.map((t) => (
+              <motion.div
+                key={t.id}
+                initial={{ opacity: 0, y: -12, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                className={`max-w-md rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-bold shadow-xl backdrop-blur-md border ${
+                  t.tone === 'error'
+                    ? 'bg-rose-600/95 border-rose-300/40 text-white'
+                    : t.tone === 'warning'
+                    ? 'bg-amber-500/95 border-amber-200/50 text-slate-950'
+                    : t.tone === 'info'
+                    ? 'bg-violet-600/95 border-violet-300/40 text-white'
+                    : 'bg-emerald-600/95 border-emerald-300/40 text-white'
+                }`}
+              >
+                {t.text}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </>
+    );
+  }
 
   const minimizedRoom = minimizedRoomId
     ? state.rooms.find((r) => r.id === minimizedRoomId)
@@ -53,9 +141,9 @@ const MainShell: React.FC = () => {
         <ShieldAlert className="w-7 h-7" />
       </div>
       <div className="space-y-1">
-        <h2 className="text-lg font-display font-extrabold">403 — وصول مقيّد للمالك فقط</h2>
+        <h2 className="text-lg font-display font-extrabold">403 — وصول مقيّد للإدارة الأساسية فقط</h2>
         <p className="text-xs sm:text-sm text-slate-300">
-          لوحة تحكم الوكالة وإعدادات النظام متاحة حصرياً لحساب المالك (OWNER).
+          لوحة تحكم الوكالة وإعدادات النظام والأزرار الإدارية متاحة حصرياً لحساب الإدارة الأساسي (ID: 900).
         </p>
       </div>
       <button
@@ -110,6 +198,8 @@ const MainShell: React.FC = () => {
           : 'bg-[#F5F7FA] text-slate-900'
       }`}
     >
+      <AppUpdateBanner />
+      {renderTrafficSurgeBanner()}
       {!isImmersiveSubpage && <TopBar />}
       {!isImmersiveSubpage && <AnnouncementBanner />}
 
@@ -132,6 +222,7 @@ const MainShell: React.FC = () => {
       <RoyalDragonOverlay />
       <LevelUpModal />
       <OfflineIndicator />
+      <LiveNotificationBanner />
 
       {/* Floating Minimized Live Room Bubble (Screenshots 7 & 8) */}
       <AnimatePresence>
@@ -207,8 +298,10 @@ const MainShell: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <MainShell />
-    </AppProvider>
+    <QueryClientProvider client={queryClient}>
+      <AppProvider>
+        <MainShell />
+      </AppProvider>
+    </QueryClientProvider>
   );
 }

@@ -3,19 +3,21 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Coins,
   Copy,
   Gift,
   Link2,
+  Lock,
   Search,
   Send,
   ShieldCheck,
   Sparkles,
   TrendingUp,
   User,
-  UserPlus,
   Users,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -24,30 +26,62 @@ import {
   AGENT_STOCK_PACKS,
 } from '../data/seedData';
 import { formatCompactNumber, formatFullGold } from '../utils/format';
+import { resolveCdnAssetUrl } from '../utils/apiBase';
+import { Agency2FAGate } from './Agency2FAGate';
 
 export const AgenciesView: React.FC = () => {
   const {
     state,
     currentUser,
+    isPrimaryAdmin,
+    isApprovedAgent,
+    agency2faStatus,
+    agency2faLoading,
+    refreshAgency2FAStatus,
+    lockAgency2FA,
     transferAgencyGold,
     purchaseAgentWholesalePack,
     sendRechargeInvite,
-    registerAsAgent,
+    submitAgencyRequest,
     setActiveTab,
     setActiveRoomId,
     openWallet,
     showToast,
   } = useApp();
 
-  const [recipientId, setRecipientId] = useState('882001');
+  const [recipientId, setRecipientId] = useState('');
   const [selectedPackId, setSelectedPackId] = useState('aq-10');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [stockModalOpen, setStockModalOpen] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
-  const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [agencyTitleInput, setAgencyTitleInput] = useState(`وكالة ${currentUser.name}`);
-  const [customInputId, setCustomInputId] = useState('882001');
+  const [contactNoteInput, setContactNoteInput] = useState('');
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [customInputId, setCustomInputId] = useState('');
+  const [twoFaRemainingSec, setTwoFaRemainingSec] = useState(0);
+
+  useEffect(() => {
+    if (!isApprovedAgent) return;
+    void refreshAgency2FAStatus();
+  }, [isApprovedAgent, refreshAgency2FAStatus]);
+
+  useEffect(() => {
+    if (!agency2faStatus?.verified || !agency2faStatus.expiresAt) {
+      setTwoFaRemainingSec(0);
+      return;
+    }
+    const updateRemaining = () => {
+      const diff = Math.max(0, Math.ceil((agency2faStatus.expiresAt! - Date.now()) / 1000));
+      setTwoFaRemainingSec(diff);
+      if (diff <= 0) {
+        void refreshAgency2FAStatus();
+      }
+    };
+    updateRemaining();
+    const timer = window.setInterval(updateRemaining, 1000);
+    return () => window.clearInterval(timer);
+  }, [agency2faStatus?.verified, agency2faStatus?.expiresAt, refreshAgency2FAStatus]);
 
   useEffect(() => {
     try {
@@ -73,8 +107,8 @@ export const AgenciesView: React.FC = () => {
   const recent24hGold = state.transfers
     .filter((t) => t.timestamp === 'الآن' || t.timestamp.startsWith('اليوم'))
     .reduce((sum, t) => sum + t.baseGold, 0);
-  const display24hGold = recent24hGold > 0 ? recent24hGold : 40_650_000;
-  const display24hUsd = Math.max(1, Math.round(display24hGold / 1_042_000));
+  const display24hGold = recent24hGold;
+  const display24hUsd = display24hGold > 0 ? Math.max(1, Math.round(display24hGold / 1_042_000)) : 0;
 
   const verifiedAgents = state.users.filter((u) => u.isVerifiedAgent);
 
@@ -104,11 +138,165 @@ export const AgenciesView: React.FC = () => {
     navigator.clipboard?.writeText(inviteText).catch(() => {});
   };
 
-  const handleApplyAgent = (e: React.FormEvent) => {
+  const myLatestRequest = state.agencyRequests.find((r) => r.userId === currentUser.id);
+
+  const handleSubmitAgencyRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    registerAsAgent(agencyTitleInput);
-    setApplyModalOpen(false);
+    if (submittingRequest) return;
+    setSubmittingRequest(true);
+    try {
+      const ok = await submitAgencyRequest(agencyTitleInput, contactNoteInput);
+      if (ok) {
+        setContactNoteInput('');
+      }
+    } finally {
+      setSubmittingRequest(false);
+    }
   };
+
+  if (!isApprovedAgent) {
+    const isPending = myLatestRequest?.status === 'pending';
+    const isRejected = myLatestRequest?.status === 'rejected';
+    return (
+      <div className="max-w-xl mx-auto px-3 py-6 space-y-4">
+        <div className="rounded-3xl overflow-hidden bg-white border border-slate-200/90 shadow-lg text-slate-900">
+          <div className="bg-white px-4 py-3.5 flex items-center justify-between border-b border-slate-100">
+            <button
+              type="button"
+              onClick={() => setActiveTab('rooms')}
+              aria-label="رجوع"
+              className="w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-800 cursor-pointer"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+            <h1 className="text-base font-display font-extrabold text-slate-900">
+              بوابة الوكالات المعتمدة
+            </h1>
+            <span className="w-9 h-9 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+              <Lock className="w-4 h-4" />
+            </span>
+          </div>
+
+          <div className="p-5 sm:p-6 space-y-5">
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-center space-y-2.5">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100 border border-amber-300 text-amber-700 flex items-center justify-center">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h2 className="text-base font-display font-extrabold text-slate-900">
+                حسابك لا يمتلك وكالة مفعّلة بعد
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                بوابة الوكالات وتحويل الأموال مغلقة افتراضياً للحسابات الجديدة، ولا تُفتح إلا بعد تقديم طلب فتح وكالة وموافقة المالك الأساسي (<span className="font-mono-num font-bold">ID: 900</span>).
+              </p>
+            </div>
+
+            {isPending && myLatestRequest ? (
+              <div className="rounded-2xl bg-amber-50 border border-amber-300/80 p-4 space-y-2">
+                <div className="flex items-center gap-2 text-amber-800 font-display font-extrabold text-sm">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  <span>طلبك قيد المراجعة لدى المالك (ID: 900)</span>
+                </div>
+                <div className="text-xs text-amber-900/90 space-y-1">
+                  <div>
+                    اسم الوكالة المطلوب: <strong>{myLatestRequest.agencyTitle}</strong>
+                  </div>
+                  {myLatestRequest.contactNote && (
+                    <div>ملاحظات التواصل: {myLatestRequest.contactNote}</div>
+                  )}
+                  <div className="text-[11px] text-amber-700 font-mono-num">
+                    تاريخ التقديم: {myLatestRequest.createdAt}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitAgencyRequest} className="space-y-3.5">
+                {isRejected && (
+                  <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3.5 flex items-start gap-2 text-xs text-rose-700 font-semibold">
+                    <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>
+                      تم رفض طلبك السابق ({myLatestRequest?.agencyTitle}). يمكنك تعديل البيانات وإعادة إرسال طلب جديد للمالك.
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    اسم الوكالة المقترح:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    minLength={3}
+                    value={agencyTitleInput}
+                    onChange={(e) => setAgencyTitleInput(e.target.value)}
+                    placeholder="مثال: وكالة الصقر للشحن"
+                    className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    وسيلة التواصل أو ملاحظة للمالك (اختياري):
+                  </label>
+                  <input
+                    type="text"
+                    value={contactNoteInput}
+                    onChange={(e) => setContactNoteInput(e.target.value)}
+                    placeholder="رقم واتساب أو نبذة عن نشاطك..."
+                    className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-300 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingRequest}
+                  className="w-full h-12 rounded-full bg-[#15D16B] hover:bg-[#11BC5F] disabled:opacity-60 text-white font-display font-extrabold text-sm shadow-md shadow-emerald-500/25 cursor-pointer"
+                >
+                  {submittingRequest ? 'جارٍ إرسال الطلب...' : 'إرسال طلب فتح وكالة للمالك (ID: 900)'}
+                </button>
+              </form>
+            )}
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => openWallet('gold')}
+                className="h-11 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold text-xs cursor-pointer"
+              >
+                الذهاب إلى المحفظة
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('rooms')}
+                className="h-11 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs cursor-pointer"
+              >
+                العودة للغرف الرئيسية
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!agency2faStatus?.verified) {
+    if (agency2faLoading && !agency2faStatus) {
+      return (
+        <div className="max-w-lg mx-auto px-3 py-10">
+          <div className="rounded-3xl bg-white border border-slate-200 p-8 text-center space-y-3 shadow-sm">
+            <span className="inline-block w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+            <p className="text-sm font-display font-bold text-slate-800">
+              جارٍ التحقق من جلسة المصادقة الثنائية للوكالة...
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return <Agency2FAGate />;
+  }
+
+  const twoFaMins = String(Math.floor(twoFaRemainingSec / 60)).padStart(2, '0');
+  const twoFaSecs = String(twoFaRemainingSec % 60).padStart(2, '0');
 
   return (
     <div className="max-w-3xl mx-auto space-y-4 pb-8">
@@ -138,12 +326,33 @@ export const AgenciesView: React.FC = () => {
           </button>
         </div>
 
+        {/* Verified Agency 2FA Security Strip (30-min window + Instant Lock) */}
+        <div className="bg-emerald-50/90 border-b border-emerald-200/80 px-4 py-2.5 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>جلسة 2FA موثقة</span>
+            <span className="text-emerald-700 font-mono-num tabular-nums">
+              · متبقي {twoFaMins}:{twoFaSecs}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void lockAgency2FA()}
+            className="min-h-[36px] px-3 rounded-xl bg-white hover:bg-rose-50 border border-emerald-300 hover:border-rose-300 text-slate-800 hover:text-rose-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>قفل الوكالة الآن</span>
+          </button>
+        </div>
+
         <div className="p-4 space-y-3.5">
           {/* Treasure Chest Reward Banner */}
           <div className="relative rounded-2xl overflow-hidden h-28 sm:h-34 shadow-sm border border-amber-300/70">
             <img
-              src={AGENCY_BANNER_PATH}
+              src={resolveCdnAssetUrl(AGENCY_BANNER_PATH)}
               alt="مكافآت وكيل لدعوة المستخدم الجديد"
+              loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
             />
@@ -159,8 +368,8 @@ export const AgenciesView: React.FC = () => {
             </div>
           </div>
 
-          {/* Glowing Purple-Blue Shortcut to Agency Control Dashboard (OWNER only) */}
-          {currentUser.role === 'OWNER' && (
+          {/* Glowing Purple-Blue Shortcut to Agency Control Dashboard (Primary Admin ID: 900 only) */}
+          {isPrimaryAdmin && (
             <button
               type="button"
               onClick={() => setActiveTab('agency-dashboard')}
@@ -192,20 +401,10 @@ export const AgenciesView: React.FC = () => {
               <div className="text-right font-display font-bold text-sm text-slate-900">
                 معلومات حساب وكيل الشحن
               </div>
-              {currentUser.isVerifiedAgent ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>وكيل معتمد</span>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setApplyModalOpen(true)}
-                  className="text-[11px] font-bold text-emerald-600 hover:underline cursor-pointer"
-                >
-                  توثيق حسابك كوكيل ←
-                </button>
-              )}
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                <ShieldCheck className="w-4 h-4" />
+                <span>{isPrimaryAdmin ? 'المالك · وكالة رئيسية' : 'وكيل معتمد'}</span>
+              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-center pt-1">
@@ -348,16 +547,6 @@ export const AgenciesView: React.FC = () => {
               اختر أي وكيل للشحن السريع أو ادخل لغرفته الصوتية مباشرة
             </p>
           </div>
-          {!currentUser.isVerifiedAgent && (
-            <button
-              type="button"
-              onClick={() => setApplyModalOpen(true)}
-              className="px-3.5 py-2 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>فتح وكالة</span>
-            </button>
-          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -438,7 +627,7 @@ export const AgenciesView: React.FC = () => {
                   setCustomInputId(e.target.value);
                   setRecipientId(e.target.value);
                 }}
-                placeholder="أدخل رقم ID (مثال: 900، 882001، 774100)"
+                placeholder="أدخل رقم ID المستلم"
                 className="w-full h-11 pr-9 pl-3 rounded-xl bg-slate-50 border border-slate-300 text-sm font-mono-num focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -636,42 +825,6 @@ export const AgenciesView: React.FC = () => {
         </div>
       )}
 
-      {/* Register New Agency Modal */}
-      {applyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <form
-            onSubmit={handleApplyAgent}
-            className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-5 space-y-4 shadow-2xl text-slate-900"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <h3 className="text-base font-display font-bold">فتح وتوثيق وكالة شحن جديدة</h3>
-              <button
-                type="button"
-                onClick={() => setApplyModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">اسم الوكالة التجاري:</label>
-              <input
-                type="text"
-                value={agencyTitleInput}
-                onChange={(e) => setAgencyTitleInput(e.target.value)}
-                placeholder="مثال: وكالة الصقر للشحن الفوري"
-                className="w-full h-11 px-3 rounded-xl bg-slate-50 border border-slate-300 text-sm focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full h-11 rounded-full bg-[#15D16B] hover:bg-[#11BC5F] text-white font-extrabold text-sm cursor-pointer"
-            >
-              توثيق الوكالة الآن (+5M مخزون هدية)
-            </button>
-          </form>
-        </div>
-      )}
     </div>
   );
 };

@@ -40,6 +40,14 @@ export interface UserAccount {
   isBanned?: boolean;
   ownedEntries: string[];
   activeEntry?: string;
+  email?: string;
+  phone?: string;
+  authProvider?: 'email' | 'google' | 'facebook' | 'phone' | 'supabase';
+  referralCode?: string;
+  referredBy?: string;
+  referralCount?: number;
+  referralRewardsGold?: number;
+  createdAt?: string;
 }
 
 export interface Top3Winner {
@@ -88,6 +96,7 @@ export interface VoiceRoom {
   themeId?: RoomThemeId;
   useThemeFilter?: boolean;
   password?: string;
+  hasPassword?: boolean;
   diceCount?: number;
   membershipCount?: number;
   membersOnlyEntry?: boolean;
@@ -102,6 +111,10 @@ export interface VoiceRoom {
   wealthBadge?: string;
   isLocked?: boolean;
   isPinned?: boolean;
+  isLive?: boolean;
+  liveTitle?: string;
+  liveStartedAt?: number;
+  followersCount?: number;
   jetCount?: number;
   seats: MicSeat[];
   messages: RoomMessage[];
@@ -219,4 +232,316 @@ export interface CommissionDistribution {
   mode: 'auto' | 'manual';
   note: string;
 }
+
+export interface InviteLinkRecord {
+  code: string;
+  inviterId: string;
+  inviterName: string;
+  roomId?: string;
+  roomTitle?: string;
+  uses: number;
+  rewardGold: number;
+  createdAt: string;
+}
+
+export interface AgencyApplicationRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  agencyTitle: string;
+  contactNote?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+export interface RoomTelemetryPoint {
+  seq: number;
+  timestamp: number;
+  label: string;
+  interaction: number;
+  voiceOnline: number;
+  heatGames: number;
+  activeMics: number;
+  speakingMics: number;
+  listeners: number;
+  messagesCount: number;
+  giftsCount: number;
+  roomHeat: number;
+}
+
+export type Agency2FAChannel = 'sms' | 'email';
+
+export interface Agency2FAStatus {
+  verified: boolean;
+  expiresAt: number | null;
+  remainingSec: number;
+  channel: Agency2FAChannel | null;
+  maskedEmail: string;
+  maskedPhone: string;
+  hasEmail: boolean;
+  hasPhone: boolean;
+  smsConfigured: boolean;
+  emailConfigured: boolean;
+  sessionDurationMin: number;
+}
+
+export interface OpsBackupItem {
+  id: string;
+  kind: 'daily' | 'pitr' | 'manual';
+  reason: string;
+  createdAt: string;
+  sizeBytes: number;
+  encrypted: boolean;
+  checksumSha256: string;
+  filename: string;
+}
+
+export interface OpsRestoreDrillResult {
+  ranAt: string;
+  backupId: string;
+  passed: boolean;
+  usersVerified: number;
+  roomsVerified: number;
+  owner900Intact: boolean;
+  checksumMatched: boolean;
+  durationMs: number;
+  error?: string;
+}
+
+export interface OpsMigrationItem {
+  id: string;
+  filename: string;
+  titleAr: string;
+  descriptionAr: string;
+  createdAt: string;
+  applied: {
+    id: string;
+    appliedAt: string;
+    appliedBy: string;
+    changedCount: number;
+    summary: string;
+    preSnapshotId?: string;
+  } | null;
+  lastDryRun: {
+    migrationId: string;
+    passed: boolean;
+    changedCount: number;
+    summary: string;
+    durationMs: number;
+    error?: string;
+  } | null;
+}
+
+export interface OpsHealthProbe {
+  checkedAt: string;
+  status: 'healthy' | 'degraded' | 'down';
+  responseMs: number;
+  eventLoopLagMs: number;
+  heapUsedMb: number;
+  rssMb: number;
+  wsClients: number;
+  activeRequests: number;
+  note?: string;
+}
+
+export interface OpsStressStage {
+  stageName: string;
+  concurrency: number;
+  totalRequests: number;
+  okCount: number;
+  rateLimited429Count: number;
+  errorCount: number;
+  rps: number;
+  avgMs: number;
+  p95Ms: number;
+  maxMs: number;
+}
+
+export interface OpsStressReport {
+  ranAt: string;
+  targetPath: string;
+  durationMs: number;
+  peakRps: number;
+  saturationStage: string | null;
+  stages: OpsStressStage[];
+}
+
+export interface OpsOverviewResponse {
+  ok: boolean;
+  retentionDays: number;
+  dbEncryptedAtRest: boolean;
+  readOnlyAutomationMode: boolean;
+  alertWebhookConfigured: boolean;
+  backupWebhookConfigured: boolean;
+  lastOffsitePushAt: string | null;
+  backups: OpsBackupItem[];
+  lastRestoreDrill: OpsRestoreDrillResult | null;
+  migrations: OpsMigrationItem[];
+  archivedRooms: Array<{
+    archivedAt: string;
+    archivedBy: string;
+    reason: string;
+    roomId: string;
+    roomTitle: string;
+    ownerName: string;
+  }>;
+  archivedModerators: Array<{
+    archivedAt: string;
+    archivedBy: string;
+    reason: string;
+    moderatorId: string;
+    name: string;
+    role: string;
+  }>;
+  monitor: {
+    intervalSec: number;
+    latest: OpsHealthProbe | null;
+    uptimePct: number;
+    history: OpsHealthProbe[];
+    alerts: Array<{
+      id: string;
+      triggeredAt: string;
+      severity: 'warning' | 'critical';
+      message: string;
+      webhookDispatched: boolean;
+    }>;
+  };
+  traffic: {
+    activeRequests: number;
+    peakConcurrent: number;
+    maxConcurrentInFlight: number;
+    maxPerIpPerMinute: number;
+    totalServed: number;
+    totalRejected429: number;
+    retryAfterSec: number;
+  };
+  indexes: {
+    indexedUsers: number;
+    indexedRooms: number;
+    indexedInvites: number;
+    rebuildCount: number;
+    lastRebuiltAt: string;
+  };
+  writePool: {
+    coalesceMs: number;
+    pendingWrites: number;
+    flushedBatches: number;
+    lastFlushMs: number;
+    lastFlushedAt: string | null;
+  };
+  lastStressTest: OpsStressReport | null;
+}
+
+export type InAppNotificationKind = 'followed_room_live' | 'popular_room_live';
+
+export interface InAppNotification {
+  id: string;
+  kind: InAppNotificationKind;
+  roomId: string;
+  roomTitle: string;
+  roomAvatar: string;
+  hostId: string;
+  hostName: string;
+  category: string;
+  title: string;
+  message: string;
+  topic?: string;
+  listeners: number;
+  heat: number;
+  createdAt: number;
+  read: boolean;
+}
+
+export interface NotificationPreferences {
+  followedRoomsLive: boolean;
+  popularRoomsLive: boolean;
+  soundEnabled: boolean;
+}
+
+export type SocialInterestTag =
+  | 'طرب'
+  | 'دردشة'
+  | 'مسابقات'
+  | 'وكالات'
+  | 'ألعاب الحظ'
+  | 'بث مباشر';
+
+export interface SharedRoomSummary {
+  roomId: string;
+  roomTitle: string;
+  category: string;
+  viewerVisitCount: number;
+}
+
+export interface SuggestedContact {
+  userId: string;
+  name: string;
+  avatar: string;
+  role: string;
+  level: number;
+  svip: number;
+  title: string;
+  country: string;
+  flag: string;
+  followers: number;
+  isVerifiedAgent?: boolean;
+  matchScore: number;
+  sharedRooms: SharedRoomSummary[];
+  sharedInterests: SocialInterestTag[];
+  activeRoomId: string | null;
+  activeRoomTitle: string | null;
+  reasonSummary: string;
+}
+
+export interface MostVisitedRoomSummary {
+  roomId: string;
+  roomTitle: string;
+  category: string;
+  visitCount: number;
+  lastVisitedAt: number;
+}
+
+export interface SocialDiscoverySnapshot {
+  suggestions: SuggestedContact[];
+  explicitInterests: SocialInterestTag[];
+  inferredInterests: SocialInterestTag[];
+  availableInterests: SocialInterestTag[];
+  mostVisitedRooms: MostVisitedRoomSummary[];
+  dismissedCount: number;
+}
+
+export type OwnerRecoveryAuditEvent =
+  | 'code_requested'
+  | 'code_rejected'
+  | 'locked_out'
+  | 'recovery_completed';
+
+export interface OwnerRecoveryAuditEntry {
+  id: string;
+  timestamp: string;
+  event: OwnerRecoveryAuditEvent;
+  maskedEmail: string;
+  deliveryMode?: 'resend' | 'smtp' | 'dev_preview';
+  phoneUpdated?: boolean;
+  revokedSessions?: number;
+  ipHint: string;
+  note: string;
+}
+
+export interface OwnerRecoveryStatus {
+  emailDeliveryConfigured: boolean;
+  devPreviewEnabled: boolean;
+  maskedAdminEmailHint: string;
+  cooldownRemainingSec: number;
+  lockoutRemainingSec: number;
+  hasPendingChallenge: boolean;
+}
+
+
+
+
+
 

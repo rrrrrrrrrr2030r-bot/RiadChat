@@ -1,8 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowDownAZ, ChevronDown, ChevronUp, Crown, Flame, Gift, Lock, Plus, Search, Sparkles, Trophy, Wrench, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowDownAZ, Bell, BellRing, ChevronDown, ChevronUp, Crown, Flame, Gift, Lock, Plus, Radio, Search, Share2, Sparkles, Trophy, Wrench, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { UserRole, VoiceRoom } from '../types';
 import { formatCompactNumber } from '../utils/format';
+import { prefetchRoomCovers } from '../utils/roomCoverCache';
+import { CachedRoomCover } from './CachedRoomCover';
+import { InviteFriendsModal } from './InviteFriendsModal';
 
 type TopFeedFilter = 'recommended' | 'activity' | 'new' | 'country';
 type SubFeedFilter = 'recent' | 'following' | 'join';
@@ -66,7 +69,19 @@ function getHostEliteLabel(role?: UserRole): string {
 }
 
 export const RoomsView: React.FC = () => {
-  const { state, currentUser, setActiveRoomId, setActiveTab, createVoiceRoom, showToast } = useApp();
+  const {
+    state,
+    currentUser,
+    isApprovedAgent,
+    setActiveRoomId,
+    setActiveTab,
+    openWallet,
+    createVoiceRoom,
+    verifyRoomPassword,
+    followedRoomIds,
+    toggleFollowRoom,
+    showToast,
+  } = useApp();
   const [topFilter, setTopFilter] = useState<TopFeedFilter>('recommended');
   const [subFilter, setSubFilter] = useState<SubFeedFilter>('recent');
   const [selectedCountry, setSelectedCountry] = useState('الكل');
@@ -74,6 +89,7 @@ export const RoomsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [passwordRoomTarget, setPasswordRoomTarget] = useState<VoiceRoom | null>(null);
   const [passwordAttempt, setPasswordAttempt] = useState('');
 
@@ -84,7 +100,7 @@ export const RoomsView: React.FC = () => {
 
   const [newTitle, setNewTitle] = useState('');
   const [newCountry, setNewCountry] = useState(COUNTRIES[1]);
-  const [newCat, setNewCat] = useState<VoiceRoom['category']>('وكالات');
+  const [newCat, setNewCat] = useState<VoiceRoom['category']>('دردشة');
   const [newDesc, setNewDesc] = useState('');
 
   const leaderboardItems = useMemo(() => {
@@ -148,7 +164,7 @@ export const RoomsView: React.FC = () => {
       showToast('هذه الغرفة مخصصة للأعضاء فقط حسب إعدادات الغرفة', 'warning');
       return;
     }
-    if (room.password && currentUser.role !== 'OWNER' && room.ownerId !== currentUser.id) {
+    if ((room.hasPassword || room.password) && currentUser.role !== 'OWNER' && room.ownerId !== currentUser.id) {
       setPasswordAttempt('');
       setPasswordRoomTarget(room);
       return;
@@ -159,17 +175,18 @@ export const RoomsView: React.FC = () => {
     setActiveRoomId(room.id);
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordRoomTarget) return;
-    if (passwordAttempt.trim() === (passwordRoomTarget.password || '').trim()) {
+    const result = await verifyRoomPassword(passwordRoomTarget.id, passwordAttempt.trim());
+    if (result.ok) {
       const targetId = passwordRoomTarget.id;
       setPasswordRoomTarget(null);
       setPasswordAttempt('');
       setActiveRoomId(targetId);
       showToast('تم فتح قفل الغرفة بنجاح', 'success');
     } else {
-      showToast('كلمة مرور الغرفة غير صحيحة', 'error');
+      showToast(result.error || 'كلمة مرور الغرفة غير صحيحة', 'error');
     }
   };
 
@@ -200,8 +217,14 @@ export const RoomsView: React.FC = () => {
       if (topFilter === 'country' && selectedCountry !== 'الكل' && room.country !== selectedCountry) {
         return false;
       }
-      if (subFilter === 'following' && room.category !== 'وكالات' && room.ownerId !== currentUser.id) {
-        return false;
+      if (subFilter === 'following') {
+        if (followedRoomIds.length > 0) {
+          if (!followedRoomIds.includes(room.id) && room.ownerId !== currentUser.id) {
+            return false;
+          }
+        } else if (room.category !== 'وكالات' && room.ownerId !== currentUser.id) {
+          return false;
+        }
       }
       if (subFilter === 'join') {
         const occupied = room.seats.filter((s) => s.userId !== null).length;
@@ -228,6 +251,23 @@ export const RoomsView: React.FC = () => {
     () => new Map(state.users.map((u) => [u.id, u])),
     [state.users]
   );
+
+  // Prefetch pinned room + visible room covers into IndexedDB (24h TTL, 60-image LRU)
+  const coverPrefetchKey = useMemo(() => {
+    const urls: string[] = [];
+    if (pinnedRoom) {
+      urls.push(pinnedRoom.coverImage || pinnedRoom.ownerAvatar);
+    }
+    for (const room of feedRooms) {
+      urls.push(room.coverImage || room.ownerAvatar);
+    }
+    return urls.filter(Boolean).join('|');
+  }, [pinnedRoom, feedRooms]);
+
+  useEffect(() => {
+    if (!coverPrefetchKey) return;
+    prefetchRoomCovers(coverPrefetchKey.split('|'));
+  }, [coverPrefetchKey]);
 
   return (
     <div className="space-y-4 pb-6">
@@ -263,7 +303,18 @@ export const RoomsView: React.FC = () => {
               })}
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setInviteModalOpen(true)}
+                aria-label="دعوة الأصدقاء"
+                title="إنشاء ومشاركة رابط دعوة للأصدقاء"
+                className="w-10 h-10 rounded-full p-[1.5px] bg-gradient-to-tr from-sky-500 via-white to-violet-500 shadow-[0_3px_12px_rgba(56,189,248,0.28)] cursor-pointer transition-transform hover:scale-105"
+              >
+                <span className="w-full h-full rounded-full bg-white hover:bg-sky-50 text-sky-600 flex items-center justify-center transition-colors">
+                  <Share2 className="w-4 h-4" />
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
@@ -350,12 +401,13 @@ export const RoomsView: React.FC = () => {
                 }}
                 className="rounded-2xl bg-white hover:bg-emerald-50/30 border border-white/90 p-3.5 sm:p-4 flex items-stretch justify-between gap-3.5 shadow-[0_6px_20px_rgba(15,23,42,0.06)] transition-all cursor-pointer"
               >
-                {/* Right side (RTL): Square cover image */}
+                {/* Right side (RTL): Square cover image cached in IndexedDB */}
                 <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 bg-slate-900 shadow-xs">
-                  <img
-                    src={pinnedRoom.coverImage || pinnedRoom.ownerAvatar}
+                  <CachedRoomCover
+                    src={pinnedRoom.coverImage}
+                    fallbackSrc={pinnedRoom.ownerAvatar}
                     alt={pinnedRoom.title}
-                    referrerPolicy="no-referrer"
+                    priority
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -364,14 +416,48 @@ export const RoomsView: React.FC = () => {
                 <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 gap-1.5">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-sm sm:text-base font-display font-extrabold text-slate-900 truncate">
-                        {pinnedRoom.title}
-                      </h2>
-                      {(pinnedRoom.jetCount || 0) > 0 && (
-                        <span className="text-base shrink-0" title="طائرة ملكية">
-                          ✈️
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <h2 className="text-sm sm:text-base font-display font-extrabold text-slate-900 truncate">
+                          {pinnedRoom.title}
+                        </h2>
+                        {pinnedRoom.isLive && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9.5px] font-extrabold inline-flex items-center gap-0.5 shrink-0">
+                            <Radio className="w-2.5 h-2.5" />
+                            <span>مباشر</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleFollowRoom(pinnedRoom.id);
+                          }}
+                          className={`h-7 px-2.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1 border transition-colors cursor-pointer ${
+                            followedRoomIds.includes(pinnedRoom.id)
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700'
+                          }`}
+                        >
+                          {followedRoomIds.includes(pinnedRoom.id) ? (
+                            <>
+                              <BellRing className="w-3 h-3 shrink-0" />
+                              <span>مُتابَع</span>
+                            </>
+                          ) : (
+                            <>
+                              <Bell className="w-3 h-3 shrink-0" />
+                              <span>متابعة</span>
+                            </>
+                          )}
+                        </button>
+                        {(pinnedRoom.jetCount || 0) > 0 && (
+                          <span className="text-base shrink-0" title="طائرة ملكية">
+                            ✈️
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Host Name + Golden Elite Badge */}
@@ -523,6 +609,8 @@ export const RoomsView: React.FC = () => {
                       <img
                         src={item.avatar}
                         alt={item.name}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover border-2 ${
                           idx === 0
@@ -584,6 +672,8 @@ export const RoomsView: React.FC = () => {
                         <img
                           src={item.avatar}
                           alt={item.name}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="w-8.5 h-8.5 rounded-full object-cover border-2 border-amber-300/80 shadow-[0_0_10px_rgba(251,191,36,0.4)] shrink-0"
                         />
@@ -618,21 +708,39 @@ export const RoomsView: React.FC = () => {
 
           {/* Bright Quick-Access Bar: Currency Recharge Agencies & Exclusive Fruits/Veggies Games */}
           <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setActiveTab('agencies')}
-              className="rounded-2xl bg-gradient-to-l from-[#15D16B] to-[#0EA954] hover:brightness-105 text-white px-4 py-3 flex items-center justify-between gap-2.5 shadow-sm cursor-pointer transition-all active:scale-[0.98]"
-            >
-              <div className="text-right min-w-0">
-                <div className="text-xs sm:text-sm font-display font-extrabold truncate">
-                  وكالات شحن العملات
+            {isApprovedAgent ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('agencies')}
+                className="rounded-2xl bg-gradient-to-l from-[#15D16B] to-[#0EA954] hover:brightness-105 text-white px-4 py-3 flex items-center justify-between gap-2.5 shadow-sm cursor-pointer transition-all active:scale-[0.98]"
+              >
+                <div className="text-right min-w-0">
+                  <div className="text-xs sm:text-sm font-display font-extrabold truncate">
+                    وكالات شحن العملات
+                  </div>
+                  <div className="text-[10.5px] text-emerald-50 font-bold truncate">
+                    تحويل فوري + 25% بونص
+                  </div>
                 </div>
-                <div className="text-[10.5px] text-emerald-50 font-bold truncate">
-                  تحويل فوري + 25% بونص
+                <span className="text-2xl shrink-0">🪙</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openWallet('gold')}
+                className="rounded-2xl bg-gradient-to-l from-[#F59E0B] to-[#EA580C] hover:brightness-105 text-white px-4 py-3 flex items-center justify-between gap-2.5 shadow-sm cursor-pointer transition-all active:scale-[0.98]"
+              >
+                <div className="text-right min-w-0">
+                  <div className="text-xs sm:text-sm font-display font-extrabold truncate">
+                    المحفظة وشحن الذهب
+                  </div>
+                  <div className="text-[10.5px] text-amber-50 font-bold truncate">
+                    باقات فورية · استبدال الماس
+                  </div>
                 </div>
-              </div>
-              <span className="text-2xl shrink-0">🪙</span>
-            </button>
+                <span className="text-2xl shrink-0">🪙</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -660,7 +768,11 @@ export const RoomsView: React.FC = () => {
             {(
               [
                 { id: 'recent', label: 'مؤخرًا' },
-                { id: 'following', label: 'المتابعة' },
+                {
+                  id: 'following',
+                  label:
+                    followedRoomIds.length > 0 ? `المتابعة (${followedRoomIds.length})` : 'المتابعة',
+                },
                 { id: 'join', label: 'انضم' },
               ] as Array<{ id: SubFeedFilter; label: string }>
             ).map((sub) => {
@@ -741,14 +853,23 @@ export const RoomsView: React.FC = () => {
                   }}
                   className="group rounded-2xl bg-white hover:bg-slate-50/80 border border-slate-100 p-3.5 sm:p-4 flex items-stretch justify-between gap-3.5 shadow-[0_3px_14px_rgba(15,23,42,0.05)] transition-all cursor-pointer"
                 >
-                  {/* Square Cover Image + optional lock badge */}
+                  {/* Square Cover Image cached in IndexedDB + optional lock badge */}
                   <div className="relative w-24 h-24 sm:w-[104px] sm:h-[104px] rounded-2xl overflow-hidden shrink-0 bg-slate-200">
-                    <img
-                      src={room.coverImage || room.ownerAvatar}
+                    <CachedRoomCover
+                      src={room.coverImage}
+                      fallbackSrc={room.ownerAvatar}
                       alt={room.title}
-                      referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                     />
+                    {room.isLive && (
+                      <span
+                        title="بث مباشر نشط الآن"
+                        className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-rose-600/95 text-white text-[9.5px] font-extrabold inline-flex items-center gap-1 shadow"
+                      >
+                        <Radio className="w-2.5 h-2.5" />
+                        <span>مباشر</span>
+                      </span>
+                    )}
                     {room.isLocked && (
                       <span
                         title="غرفة مقفلة"
@@ -762,8 +883,8 @@ export const RoomsView: React.FC = () => {
                   {/* Center Details */}
                   <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 gap-1.5">
                     <div className="space-y-1.5">
-                      {/* Title & Jet Badges + Dismiss X */}
-                      <div className="flex items-start justify-between gap-2.5">
+                      {/* Title & Jet Badges + Follow + Dismiss X */}
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0 flex-wrap">
                           <h2 className="text-sm sm:text-base font-display font-extrabold text-slate-900 truncate">
                             {room.title}
@@ -777,17 +898,53 @@ export const RoomsView: React.FC = () => {
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDismissedIds((prev) => [...prev, room.id]);
-                          }}
-                          aria-label="إخفاء الغرفة"
-                          className="w-7 h-7 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center shrink-0 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void toggleFollowRoom(room.id);
+                            }}
+                            aria-label={
+                              followedRoomIds.includes(room.id)
+                                ? 'إلغاء متابعة الغرفة'
+                                : 'متابعة إشعارات البث المباشر للغرفة'
+                            }
+                            title={
+                              followedRoomIds.includes(room.id)
+                                ? 'مُتابَع · تصلك إشعارات البث'
+                                : 'متابعة الغرفة لتصلك إشعارات البث المباشر'
+                            }
+                            className={`h-7 px-2 rounded-full text-[11px] font-bold inline-flex items-center gap-1 border transition-colors cursor-pointer ${
+                              followedRoomIds.includes(room.id)
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700'
+                            }`}
+                          >
+                            {followedRoomIds.includes(room.id) ? (
+                              <>
+                                <BellRing className="w-3 h-3 shrink-0" />
+                                <span className="hidden sm:inline">مُتابَع</span>
+                              </>
+                            ) : (
+                              <>
+                                <Bell className="w-3 h-3 shrink-0" />
+                                <span className="hidden sm:inline">متابعة</span>
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDismissedIds((prev) => [...prev, room.id]);
+                            }}
+                            aria-label="إخفاء الغرفة"
+                            className="w-7 h-7 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center shrink-0 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Host Name + Golden Elite Badge */}
@@ -822,6 +979,8 @@ export const RoomsView: React.FC = () => {
                               key={seat.seatNumber}
                               src={seat.avatar || room.ownerAvatar}
                               alt={seat.userName || ''}
+                              loading="lazy"
+                              decoding="async"
                               referrerPolicy="no-referrer"
                               className="w-6.5 h-6.5 rounded-full object-cover ring-2 ring-white bg-slate-200"
                             />
@@ -904,7 +1063,7 @@ export const RoomsView: React.FC = () => {
                     onChange={(e) => setNewCat(e.target.value as VoiceRoom['category'])}
                     className="w-full h-11 px-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   >
-                    {CATEGORIES.map((c) => (
+                    {CATEGORIES.filter((c) => c !== 'وكالات' || isApprovedAgent).map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -977,6 +1136,11 @@ export const RoomsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <InviteFriendsModal
+        open={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+      />
     </div>
   );
 };

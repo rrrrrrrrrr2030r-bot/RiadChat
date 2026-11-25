@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Crown, Diamond, Coins, Shield, UserCheck, ChevronDown, Wallet, Sparkles } from 'lucide-react';
+import { Crown, Diamond, Coins, Shield, UserCheck, ChevronDown, Wallet, Sparkles, LogOut, RefreshCw, User } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { MainTab, UserRole } from '../types';
 import { formatCompactNumber, formatDiamonds } from '../utils/format';
+import { forceRefreshApp } from '../utils/cacheBuster';
+import { APP_ICON_PATH } from '../data/seedData';
 import { PWAInstallButton } from './PWAInstallButton';
+import { NotificationCenter } from './NotificationCenter';
 
-const DESKTOP_NAV: Array<{ id: MainTab; label: string; ownerOnly?: boolean }> = [
+const DESKTOP_NAV: Array<{ id: MainTab; label: string; ownerOnly?: boolean; agentOnly?: boolean }> = [
   { id: 'rooms', label: 'الغرفة' },
   { id: 'games', label: 'لعبة' },
-  { id: 'agencies', label: 'الوكالات' },
+  { id: 'agencies', label: 'الوكالات', agentOnly: true },
   { id: 'agency-dashboard', label: 'لوحة الوكالة', ownerOnly: true },
   { id: 'square', label: 'ساحة' },
   { id: 'messages', label: 'الرسائل' },
@@ -30,12 +33,15 @@ export const TopBar: React.FC = () => {
     setActiveRoomId,
     openWallet,
     currentUser,
+    isPrimaryAdmin,
+    isApprovedAgent,
     state,
     switchUserAccount,
+    logoutAccount,
   } = useApp();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
-  const isOwner = currentUser.role === 'OWNER';
+  const isOwner = isPrimaryAdmin;
 
   // Golden Glow pulse & numeric roll-up on gold OR diamonds increase
   const [displayGold, setDisplayGold] = useState(currentUser.gold);
@@ -121,7 +127,9 @@ export const TopBar: React.FC = () => {
     setActiveTab(tab);
   };
 
-  const visibleNavItems = DESKTOP_NAV.filter((item) => !item.ownerOnly || isOwner);
+  const visibleNavItems = DESKTOP_NAV.filter(
+    (item) => (!item.ownerOnly || isOwner) && (!item.agentOnly || isApprovedAgent)
+  );
 
   return (
     <header className="sticky top-0 z-40 h-14 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-[0_1px_8px_rgba(15,23,42,0.03)]">
@@ -132,10 +140,12 @@ export const TopBar: React.FC = () => {
           onClick={() => handleNav('rooms')}
           className="flex items-center gap-1.5 font-display font-extrabold text-sm sm:text-xl tracking-tight whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-lg px-0.5"
         >
-          <span className="w-8 h-8 rounded-xl p-[1.5px] bg-gradient-to-tr from-violet-600 via-white to-purple-500 shadow-[0_0_10px_rgba(124,58,237,0.28)] shrink-0 flex items-center justify-center">
-            <span className="w-full h-full rounded-[10px] bg-gradient-to-br from-violet-600 to-purple-700 text-white flex items-center justify-center">
-              <Crown className="w-4 h-4 shrink-0" />
-            </span>
+          <span className="w-8 h-8 rounded-xl p-[1.5px] bg-gradient-to-tr from-violet-600 via-fuchsia-400 to-sky-400 shadow-[0_0_10px_rgba(124,58,237,0.3)] shrink-0 flex items-center justify-center overflow-hidden">
+            <img
+              src={APP_ICON_PATH}
+              alt="رياض شات"
+              className="w-full h-full rounded-[10px] object-cover object-center"
+            />
           </span>
           <span className="text-slate-900">رياض شات</span>
         </button>
@@ -191,6 +201,8 @@ export const TopBar: React.FC = () => {
             </span>
           </button>
 
+          <NotificationCenter />
+
           <button
             type="button"
             onClick={() => openWallet('diamonds')}
@@ -238,57 +250,113 @@ export const TopBar: React.FC = () => {
                   className="fixed inset-0 z-40"
                   onClick={() => setAccountMenuOpen(false)}
                 />
-                <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-white border border-slate-200 shadow-2xl p-2 z-50">
-                  <div className="px-3 py-2 border-b border-slate-100 text-xs font-bold text-slate-500 flex items-center justify-between">
-                    <span>تبديل الحساب النشط (RBAC)</span>
-                    <span className="text-[10px] font-mono-num text-violet-600">
+                <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-white border border-slate-200 shadow-2xl p-2 z-50 space-y-1.5">
+                  <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-slate-900 truncate">
+                        {currentUser.name}
+                      </div>
+                      <div className="text-[11px] font-mono-num text-slate-500">
+                        ID: {currentUser.id}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md border bg-violet-50 text-violet-700 border-violet-200 shrink-0">
                       {ROLE_LABELS[currentUser.role].label}
                     </span>
                   </div>
-                  <div className="mt-1 space-y-1 max-h-72 overflow-y-auto">
-                    {state.users.map((u) => {
-                      const active = u.id === currentUser.id;
-                      const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.USER;
-                      return (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => {
-                            switchUserAccount(u.id);
-                            setAccountMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-right text-xs transition-colors cursor-pointer ${
-                            active
-                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                              : 'hover:bg-slate-50 text-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <img
-                              src={u.avatar}
-                              alt={u.name}
-                              referrerPolicy="no-referrer"
-                              className="w-7 h-7 rounded-full object-cover shrink-0"
-                            />
-                            <div className="truncate">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-semibold truncate">{u.name}</span>
-                                <span
-                                  className={`px-1.5 py-[1px] rounded-md border text-[9px] font-bold shrink-0 ${roleInfo.badgeClass}`}
-                                >
-                                  {roleInfo.label}
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-400 font-mono-num">
-                                ID: {u.id} · {u.role}
-                              </div>
-                            </div>
-                          </div>
-                          {active && <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />}
-                        </button>
-                      );
-                    })}
+
+                  {/* Quick Personal Actions */}
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        handleNav('me');
+                      }}
+                      className="w-full min-h-[40px] flex items-center gap-2 px-3 py-2 rounded-xl text-right text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <User className="w-4 h-4 text-violet-600 shrink-0" />
+                      <span>الملف الشخصي والإعدادات</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        void forceRefreshApp();
+                      }}
+                      className="w-full min-h-[40px] flex items-center gap-2 px-3 py-2 rounded-xl text-right text-xs font-bold text-sky-700 hover:bg-sky-50 cursor-pointer"
+                    >
+                      <RefreshCw className="w-4 h-4 text-sky-600 shrink-0" />
+                      <span>تحديث التطبيق ومسح الكاش</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        void logoutAccount();
+                      }}
+                      className="w-full min-h-[40px] flex items-center gap-2 px-3 py-2 rounded-xl text-right text-xs font-bold text-rose-600 hover:bg-rose-50 cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-500 shrink-0" />
+                      <span>تسجيل الخروج</span>
+                    </button>
                   </div>
+
+                  {/* RBAC Account Switcher — STRICTLY Primary Admin (ID: 900) ONLY */}
+                  {isPrimaryAdmin && (
+                    <div className="pt-1.5 border-t border-slate-100">
+                      <div className="px-3 py-1.5 text-[11px] font-bold text-slate-500 flex items-center justify-between">
+                        <span>تبديل الحساب (إدارة ID: 900)</span>
+                        <span className="text-[10px] font-mono-num text-violet-600">RBAC</span>
+                      </div>
+                      <div className="mt-1 space-y-1 max-h-56 overflow-y-auto">
+                        {state.users.map((u) => {
+                          const active = u.id === currentUser.id;
+                          const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.USER;
+                          return (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => {
+                                switchUserAccount(u.id);
+                                setAccountMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-right text-xs transition-colors cursor-pointer ${
+                                active
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : 'hover:bg-slate-50 text-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <img
+                                  src={u.avatar}
+                                  alt={u.name}
+                                  referrerPolicy="no-referrer"
+                                  className="w-7 h-7 rounded-full object-cover shrink-0"
+                                />
+                                <div className="truncate">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold truncate">{u.name}</span>
+                                    <span
+                                      className={`px-1.5 py-[1px] rounded-md border text-[9px] font-bold shrink-0 ${roleInfo.badgeClass}`}
+                                    >
+                                      {roleInfo.label}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 font-mono-num">
+                                    ID: {u.id}
+                                  </div>
+                                </div>
+                              </div>
+                              {active && <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}

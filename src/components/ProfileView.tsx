@@ -5,6 +5,7 @@ import {
   Award,
   Check,
   CheckCircle2,
+  Clock,
   Coins,
   Copy,
   Crown,
@@ -13,9 +14,15 @@ import {
   Flame,
   Gift,
   Heart,
+  KeyRound,
+  LogOut,
   MessageCircle,
   Mic,
+  Phone,
   PlusCircle,
+  RefreshCw,
+  Send,
+  Share2,
   Shield,
   ShoppingBag,
   SlidersHorizontal,
@@ -30,8 +37,19 @@ import { useApp } from '../context/AppContext';
 import { APP_ICON_PATH } from '../data/seedData';
 import { formatCompactNumber, formatFullGold } from '../utils/format';
 import { ROOM_XP_REWARDS, getLevelProgress } from '../utils/leveling';
+import { forceRefreshApp } from '../utils/cacheBuster';
+import { InviteFriendsModal } from './InviteFriendsModal';
 
-type ProfileModal = null | 'tasks' | 'level' | 'honor' | 'svip' | 'aristocrat' | 'wizard';
+type ProfileModal =
+  | null
+  | 'tasks'
+  | 'level'
+  | 'honor'
+  | 'svip'
+  | 'aristocrat'
+  | 'wizard'
+  | 'agency-request'
+  | 'credentials';
 
 const ARISTOCRAT_TIERS = [
   { name: 'فارس المنصة', cost: 25_000_000, perks: 'شارة الفارس + لون مميز بالمحادثة' },
@@ -44,19 +62,35 @@ export const ProfileView: React.FC = () => {
   const {
     state,
     currentUser,
+    isPrimaryAdmin,
+    isApprovedAgent,
     setActiveTab,
     openWallet,
     claimTaskReward,
     claimDailyStreakBonus,
     joinAristocratTier,
     upgradeSvip,
+    submitAgencyRequest,
+    updateAccountCredentials,
+    logoutAccount,
     showToast,
   } = useApp();
 
   const [modal, setModal] = useState<ProfileModal>(null);
   const [celebrationBurst, setCelebrationBurst] = useState(false);
+  const [refreshingApp, setRefreshingApp] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [agencyNameInput, setAgencyNameInput] = useState(`وكالة ${currentUser.name}`);
+  const [agencyNoteInput, setAgencyNoteInput] = useState('');
+  const [submittingAgencyReq, setSubmittingAgencyReq] = useState(false);
+  const [credPhoneInput, setCredPhoneInput] = useState(currentUser.phone || '');
+  const [credCurrentPassword, setCredCurrentPassword] = useState('');
+  const [credNewPassword, setCredNewPassword] = useState('');
+  const [credError, setCredError] = useState<string | null>(null);
+  const [savingCredentials, setSavingCredentials] = useState(false);
 
-  const isOwner = currentUser.role === 'OWNER';
+  const isOwner = isPrimaryAdmin;
+  const myLatestAgencyReq = state.agencyRequests.find((r) => r.userId === currentUser.id);
   const myHostRecord = state.hosts.find((h) => h.userId === currentUser.id);
   const hostTargetPercent = myHostRecord
     ? Math.min(100, Math.round((myHostRecord.giftsReceivedGold / Math.max(1, myHostRecord.targetGold)) * 100))
@@ -98,7 +132,9 @@ export const ProfileView: React.FC = () => {
     <div className="space-y-5">
       {currentUser.isBanned && (
         <div className="rounded-2xl bg-rose-950/60 border border-rose-500/50 px-4 py-3 text-xs sm:text-sm text-rose-200 font-semibold">
-          حسابك مقيد حالياً من الإدارة — تواصل مع الدعم أو أزل التقييد من لوحة النظام.
+          {isOwner
+            ? 'حسابك مقيد حالياً — يمكنك تعديل حالة الحساب من لوحة النظام.'
+            : 'حسابك مقيد حالياً من الإدارة — يرجى التواصل مع فريق الدعم.'}
         </div>
       )}
 
@@ -523,52 +559,94 @@ export const ProfileView: React.FC = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl bg-[#161038] border border-violet-500/30 p-4 sm:p-5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl p-[1.5px] bg-gradient-to-tr from-violet-500 via-white to-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.3)] shrink-0">
-              <div className="w-full h-full rounded-[10px] bg-[#221854] text-white flex items-center justify-center">
-                <Coins className="w-5 h-5" />
+        {isApprovedAgent ? (
+          <section className="rounded-2xl bg-[#161038] border border-violet-500/30 p-4 sm:p-5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl p-[1.5px] bg-gradient-to-tr from-violet-500 via-white to-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.3)] shrink-0">
+                <div className="w-full h-full rounded-[10px] bg-[#221854] text-white flex items-center justify-center">
+                  <Coins className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
+                <h2 className="text-sm sm:text-base font-display font-bold text-white">
+                  {isOwner ? 'تحويل الأموال والإدارة' : 'بوابة الوكالة المعتمدة'}
+                </h2>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  {isOwner ? 'وكيل الشحن وإعدادات النظام الفائق' : 'تحويل العملات وإدارة مخزون الوكالة'}
+                </p>
               </div>
             </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-display font-bold text-white">
-                تحويل الأموال والإدارة
-              </h2>
-              <p className="text-xs text-slate-300 mt-0.5">
-                وكيل الشحن وإعدادات النظام الفائق
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-            {isOwner && (
+            <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('agency-dashboard')}
+                  className="h-10 px-3 rounded-xl bg-gradient-to-l from-violet-600 to-blue-500 hover:from-violet-500 hover:to-blue-400 text-white font-bold text-xs cursor-pointer shadow-[0_0_12px_rgba(99,102,241,0.4)] whitespace-nowrap"
+                >
+                  لوحة الوكالة
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setActiveTab('agency-dashboard')}
-                className="h-10 px-3 rounded-xl bg-gradient-to-l from-violet-600 to-blue-500 hover:from-violet-500 hover:to-blue-400 text-white font-bold text-xs cursor-pointer shadow-[0_0_12px_rgba(99,102,241,0.4)] whitespace-nowrap"
+                onClick={() => setActiveTab('agencies')}
+                className="h-10 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-200 hover:text-white border border-emerald-400/45 font-bold text-xs cursor-pointer"
               >
-                لوحة الوكالة
+                تحويل
               </button>
-            )}
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('system')}
+                  aria-label="مركز النظام والإدارة"
+                  className="h-10 px-3 rounded-xl bg-violet-500/20 hover:bg-violet-500 text-violet-200 hover:text-white border border-violet-400/45 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>النظام</span>
+                </button>
+              )}
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-2xl bg-[#161038] border border-violet-500/30 p-4 sm:p-5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-xl p-[1.5px] bg-gradient-to-tr from-emerald-500 via-white to-violet-500 shadow-[0_0_12px_rgba(16,185,129,0.28)] shrink-0">
+                <div className="w-full h-full rounded-[10px] bg-[#221854] text-emerald-300 flex items-center justify-center">
+                  {myLatestAgencyReq?.status === 'pending' ? (
+                    <Clock className="w-5 h-5 text-amber-300" />
+                  ) : (
+                    <Send className="w-5 h-5" />
+                  )}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-display font-bold text-white truncate">
+                  طلب فتح وكالة رسمية
+                </h2>
+                <p className="text-xs text-slate-300 mt-0.5 truncate">
+                  {myLatestAgencyReq?.status === 'pending'
+                    ? `طلبك (${myLatestAgencyReq.agencyTitle}) بانتظار موافقة المالك ID: 900`
+                    : myLatestAgencyReq?.status === 'rejected'
+                    ? 'تم رفض الطلب السابق · يمكنك التقديم مجدداً'
+                    : 'يتطلب موافقة المالك (ID: 900) لتفعيل الوكالة'}
+                </p>
+              </div>
+            </div>
             <button
               type="button"
-              onClick={() => setActiveTab('agencies')}
-              className="h-10 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-200 hover:text-white border border-emerald-400/45 font-bold text-xs cursor-pointer"
+              onClick={() => {
+                setAgencyNameInput(`وكالة ${currentUser.name}`);
+                setModal('agency-request');
+              }}
+              className={`h-10 px-3.5 rounded-xl font-bold text-xs cursor-pointer whitespace-nowrap shrink-0 border ${
+                myLatestAgencyReq?.status === 'pending'
+                  ? 'bg-amber-500/20 text-amber-200 border-amber-400/45'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-200 hover:text-white border-emerald-400/45'
+              }`}
             >
-              تحويل
+              {myLatestAgencyReq?.status === 'pending' ? 'حالة الطلب' : 'تقديم طلب'}
             </button>
-            {isOwner && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('system')}
-                aria-label="مركز النظام والإدارة"
-                className="h-10 px-3 rounded-xl bg-violet-500/20 hover:bg-violet-500 text-violet-200 hover:text-white border border-violet-400/45 font-bold text-xs flex items-center gap-1 cursor-pointer"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>النظام</span>
-              </button>
-            )}
-          </div>
-        </section>
+          </section>
+        )}
       </div>
 
       {/* Install & Store Bundle Card (Screenshot 1) */}
@@ -607,6 +685,77 @@ export const ProfileView: React.FC = () => {
         </button>
       </section>
 
+      {/* App Settings: Real Invite Link, Cache-Busting Force Update & Sign Out */}
+      <section className="rounded-3xl bg-[#161038] border border-violet-500/30 p-4 sm:p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm sm:text-base font-display font-extrabold text-white">
+              إعدادات التطبيق والحساب
+            </h2>
+            <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
+              دعوة الأصدقاء · مسح التخزين المؤقت وجلب أحدث نسخة · إدارة الجلسة
+            </p>
+          </div>
+          <span className="text-[11px] font-mono-num text-indigo-200/80">
+            كودك: {currentUser.referralCode || `RIAD-${currentUser.id}`}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setCredPhoneInput(currentUser.phone || '');
+              setCredCurrentPassword('');
+              setCredNewPassword('');
+              setCredError(null);
+              setModal('credentials');
+            }}
+            className="min-h-[46px] px-4 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/45 text-emerald-100 font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors"
+          >
+            <KeyRound className="w-4 h-4 shrink-0" />
+            <span>الهاتف وكلمة المرور</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setInviteModalOpen(true)}
+            className="min-h-[46px] px-4 rounded-2xl bg-gradient-to-l from-violet-600/85 to-blue-600/85 hover:brightness-110 text-white font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
+          >
+            <Share2 className="w-4 h-4 shrink-0" />
+            <span>دعوة الأصدقاء (+1M)</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={refreshingApp}
+            onClick={() => {
+              setRefreshingApp(true);
+              showToast('جارٍ مسح الكاش القديم وتحديث التطبيق بأحدث نسخة...', 'info');
+              void forceRefreshApp();
+            }}
+            className="min-h-[46px] px-4 rounded-2xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/45 text-sky-100 font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 shrink-0 ${refreshingApp ? 'animate-spin' : ''}`} />
+            <span>{refreshingApp ? 'جارٍ التحديث...' : 'تحديث التطبيق'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void logoutAccount()}
+            className="min-h-[46px] px-4 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-rose-200 font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span>تسجيل الخروج</span>
+          </button>
+        </div>
+      </section>
+
+      <InviteFriendsModal
+        open={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+      />
+
       {/* Modals */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#060414]/85 backdrop-blur-sm p-4">
@@ -619,6 +768,8 @@ export const ProfileView: React.FC = () => {
                 {modal === 'svip' && 'امتيازات SVIP الملكية'}
                 {modal === 'aristocrat' && 'الرتب الارستقراطية VIP'}
                 {modal === 'wizard' && 'معالج تثبيت التطبيق واستخراج حزمة المتجر'}
+                {modal === 'agency-request' && 'تقديم طلب فتح وكالة رسمية'}
+                {modal === 'credentials' && 'تحديث رقم الهاتف وكلمة المرور'}
               </h3>
               <button
                 type="button"
@@ -888,6 +1039,180 @@ export const ProfileView: React.FC = () => {
                   <span>استخراج حزمة المتجر (AAB / APK / iOS Config)</span>
                 </button>
               </div>
+            )}
+
+            {modal === 'agency-request' && (
+              <div className="space-y-4">
+                {myLatestAgencyReq?.status === 'pending' ? (
+                  <div className="rounded-2xl bg-amber-500/15 border border-amber-400/45 p-4 space-y-2 text-amber-100">
+                    <div className="flex items-center gap-2 font-display font-bold text-sm text-amber-200">
+                      <Clock className="w-4 h-4 shrink-0" />
+                      <span>طلبك قيد المراجعة لدى المالك (ID: 900)</span>
+                    </div>
+                    <p className="text-xs text-amber-100/90 leading-relaxed">
+                      اسم الوكالة: <strong>{myLatestAgencyReq.agencyTitle}</strong>
+                      {myLatestAgencyReq.contactNote ? ` · ${myLatestAgencyReq.contactNote}` : ''}
+                    </p>
+                    <p className="text-[11px] text-amber-200/80">
+                      بمجرد موافقة المالك الأساسي على طلبك سيتم تفعيل بوابة الوكالة لحسابك فوراً.
+                    </p>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (submittingAgencyReq) return;
+                      setSubmittingAgencyReq(true);
+                      try {
+                        const ok = await submitAgencyRequest(agencyNameInput, agencyNoteInput);
+                        if (ok) {
+                          setAgencyNoteInput('');
+                          setModal(null);
+                        }
+                      } finally {
+                        setSubmittingAgencyReq(false);
+                      }
+                    }}
+                    className="space-y-3.5"
+                  >
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      أرسل طلب فتح وكالة رسمية إلى حساب المالك الأساسي (<span className="font-mono-num text-sky-300 font-bold">ID: 900</span>). لن تظهر أدوات الوكالة لحسابك إلا بعد الموافقة الرسمية.
+                    </p>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-200">اسم الوكالة المطلوب:</label>
+                      <input
+                        type="text"
+                        required
+                        minLength={3}
+                        value={agencyNameInput}
+                        onChange={(e) => setAgencyNameInput(e.target.value)}
+                        placeholder="مثال: وكالة الفهد للشحن"
+                        className="w-full h-11 px-3 rounded-xl bg-[#0F0B28] border border-violet-500/35 text-sm text-white focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-200">
+                        رقم تواصل أو ملاحظة للمالك (اختياري):
+                      </label>
+                      <input
+                        type="text"
+                        value={agencyNoteInput}
+                        onChange={(e) => setAgencyNoteInput(e.target.value)}
+                        placeholder="رقم واتساب أو نبذة مختصرة..."
+                        className="w-full h-11 px-3 rounded-xl bg-[#0F0B28] border border-violet-500/35 text-sm text-white focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={submittingAgencyReq}
+                      className="w-full h-12 rounded-xl bg-gradient-to-l from-emerald-600 to-teal-500 hover:brightness-110 disabled:opacity-60 text-white font-extrabold text-sm cursor-pointer"
+                    >
+                      {submittingAgencyReq ? 'جارٍ إرسال الطلب...' : 'إرسال طلب فتح الوكالة للمالك'}
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {modal === 'credentials' && (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (savingCredentials) return;
+                  setCredError(null);
+                  const cleanPhone = credPhoneInput.trim();
+                  const cleanNewPass = credNewPassword;
+                  if (!cleanPhone && !cleanNewPass) {
+                    setCredError('يرجى إدخال رقم الهاتف الجديد أو كلمة المرور الجديدة');
+                    return;
+                  }
+                  if (cleanNewPass && cleanNewPass.length < 8) {
+                    setCredError('كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل');
+                    return;
+                  }
+                  setSavingCredentials(true);
+                  try {
+                    const result = await updateAccountCredentials({
+                      ...(cleanPhone ? { phone: cleanPhone } : {}),
+                      ...(cleanNewPass ? { newPassword: cleanNewPass } : {}),
+                      ...(credCurrentPassword ? { currentPassword: credCurrentPassword } : {}),
+                    });
+                    if (!result.ok) {
+                      setCredError(result.error || 'تعذر حفظ البيانات');
+                      return;
+                    }
+                    setCredCurrentPassword('');
+                    setCredNewPassword('');
+                    setModal(null);
+                  } finally {
+                    setSavingCredentials(false);
+                  }
+                }}
+                className="space-y-3.5"
+              >
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  يمكنك تحديث رقم الهاتف المرتبط بحسابك وتعيين كلمة مرور جديدة تُحفظ مشفّرة بالكامل داخل قاعدة البيانات. إذا سجّلت الدخول للتو عبر رمز التحقق (OTP) فلن تحتاج لإدخال كلمة المرور السابقة.
+                </p>
+
+                {credError && (
+                  <div className="rounded-xl bg-rose-950/60 border border-rose-500/50 px-3 py-2 text-xs text-rose-200 font-semibold">
+                    {credError}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                    <Phone className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>رقم الهاتف الجديد مع رمز الدولة:</span>
+                  </label>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={credPhoneInput}
+                    onChange={(e) => setCredPhoneInput(e.target.value)}
+                    placeholder="+9677xxxxxxxx"
+                    className="w-full h-11 px-3 rounded-xl bg-[#0F0B28] border border-violet-500/35 text-sm text-white font-mono-num focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                    <KeyRound className="w-3.5 h-3.5 text-sky-300" />
+                    <span>كلمة المرور الجديدة (8 أحرف على الأقل):</span>
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    value={credNewPassword}
+                    onChange={(e) => setCredNewPassword(e.target.value)}
+                    placeholder="أدخل كلمة المرور الجديدة"
+                    className="w-full h-11 px-3 rounded-xl bg-[#0F0B28] border border-violet-500/35 text-sm text-white focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-300">
+                    كلمة المرور الحالية (اختيارية عند الدخول عبر رمز OTP):
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={credCurrentPassword}
+                    onChange={(e) => setCredCurrentPassword(e.target.value)}
+                    placeholder="اتركها فارغة إذا سجّلت الدخول برمز OTP"
+                    className="w-full h-11 px-3 rounded-xl bg-[#0F0B28] border border-violet-500/35 text-sm text-white focus:outline-none focus:border-violet-400"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingCredentials}
+                  className="w-full h-12 rounded-xl bg-gradient-to-l from-emerald-600 to-teal-500 hover:brightness-110 disabled:opacity-60 text-white font-extrabold text-sm cursor-pointer"
+                >
+                  {savingCredentials ? 'جارٍ الحفظ المشفّر...' : 'حفظ الهاتف وكلمة المرور الجديدة'}
+                </button>
+              </form>
             )}
           </div>
         </div>

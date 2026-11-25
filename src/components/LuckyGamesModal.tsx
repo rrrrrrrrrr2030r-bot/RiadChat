@@ -328,6 +328,7 @@ export const LuckyGamesModal: React.FC<LuckyGamesModalProps> = ({
     adjustUserGold,
     recordGameBet,
     claimDailyCashback,
+    announceGameWinInRoom,
     openWallet,
     showToast,
   } = useApp();
@@ -475,6 +476,7 @@ export const LuckyGamesModal: React.FC<LuckyGamesModalProps> = ({
           adjustUserGold(currentUser.id, payout);
           setFruitDailyProfit((p) => p + payout);
           playArcadeTone(soundOn, 'win');
+          announceGameWinInRoom('لعبة الفواكه', winner.icon, payout);
           showToast(`🍊 فوز رائع في الفواكه! +${formatFullGold(payout)} ذهب`, 'success');
         }
         const betItems = Object.entries(fruitBets)
@@ -558,6 +560,7 @@ export const LuckyGamesModal: React.FC<LuckyGamesModalProps> = ({
           adjustUserGold(currentUser.id, payout);
           setFoodieDailyRevenue((p) => p + payout);
           playArcadeTone(soundOn, 'win');
+          announceGameWinInRoom('عجلة الخضروات واللحوم', winner.icon, payout);
           showToast(`🐶 مبروك! فزت في الخضروات واللحوم بـ +${formatFullGold(payout)} ذهب`, 'success');
         }
 

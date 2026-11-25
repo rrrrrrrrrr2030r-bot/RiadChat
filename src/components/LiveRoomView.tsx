@@ -4,6 +4,8 @@ import {
   Armchair,
   Award,
   Backpack,
+  Bell,
+  BellRing,
   Calculator,
   ChevronLeft,
   ChevronUp,
@@ -26,9 +28,11 @@ import {
   Palette,
   Pause,
   Play,
+  Radio,
   Repeat,
   Send,
   Settings,
+  Share2,
   Shield,
   SkipBack,
   SkipForward,
@@ -53,6 +57,7 @@ import { LuckyGameKind, LuckyGamesModal } from './LuckyGamesModal';
 import { RoomControlSheet, RoomSettingsModal } from './RoomSettingsModal';
 import { RoomEngagementCard } from './RoomEngagementCard';
 import { ActiveHostsPanel } from './ActiveHostsPanel';
+import { InviteFriendsModal } from './InviteFriendsModal';
 
 const GIFT_CATEGORIES: GiftCategory[] = ['هدية', 'النشاط', 'العشاق', 'مكافأة', 'شرف', 'SVIP'];
 const GIFT_QUANTITIES = [1, 5, 10, 99];
@@ -92,6 +97,7 @@ export const LiveRoomView: React.FC = () => {
     setActiveTab,
     openWallet,
     currentUser,
+    isApprovedAgent,
     activeGiftAnimation,
     dismissGiftAnimation,
     toggleSeatInRoom,
@@ -105,16 +111,24 @@ export const LiveRoomView: React.FC = () => {
     boostRoomHeat,
     adjustUserGold,
     updateRoomSettings,
+    followedRoomIds,
+    toggleFollowRoom,
+    startRoomLiveBroadcast,
+    stopRoomLiveBroadcast,
     showToast,
   } = useApp();
 
   const [chatFilter, setChatFilter] = useState<'all' | 'chat'>('all');
+  const [liveTopicOpen, setLiveTopicOpen] = useState(false);
+  const [liveTopicInput, setLiveTopicInput] = useState('');
+  const [liveActionBusy, setLiveActionBusy] = useState(false);
   const [chatComposerOpen, setChatComposerOpen] = useState(false);
   const [emojiBarOpen, setEmojiBarOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
 
   // Sheets & Overlays
   const [giftDrawerOpen, setGiftDrawerOpen] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [activeGiftCategory, setActiveGiftCategory] = useState<GiftCategory>('هدية');
   const [selectedGiftId, setSelectedGiftId] = useState<string>(ROOM_GIFTS[3]?.id || ROOM_GIFTS[0].id);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string>('');
@@ -485,6 +499,10 @@ export const LiveRoomView: React.FC = () => {
         setLuckyGamesOpen(true);
         break;
       case 'agency':
+        if (!isApprovedAgent) {
+          showToast('🚫 بوابة الوكالة متاحة فقط بعد اعتماد طلبك من المالك (ID: 900)', 'error');
+          break;
+        }
         minimizeRoom();
         setActiveTab('agencies');
         break;
@@ -494,7 +512,7 @@ export const LiveRoomView: React.FC = () => {
         sendRoomMessage(room.id, '⚔️ انطلقت جولة تحدي PK حماسية في الغرفة! (+2.5M حرارة)');
         break;
       case 'broadcast':
-        sendRoomMessage(room.id, '📢 بث الغرفة: أهلاً بالجميع في وكاله رياض — لا يفوتكم دعم الجولات!');
+        void startRoomLiveBroadcast(room.id, `بث مباشر مع ${currentUser.name}`);
         break;
       case 'treasure':
         adjustUserGold(currentUser.id, 25_000);
@@ -658,8 +676,152 @@ export const LiveRoomView: React.FC = () => {
             </div>
           </div>
 
-          {/* Left side (RTL): Quick Menu / Settings, Minimize chevron ^ & Exit X */}
+          {/* Left side (RTL): Live Broadcast / Follow Bell, Share Invite Link, Settings, Minimize ^ & Exit X */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {(room.ownerId === currentUser.id ||
+              currentUser.id === '900' ||
+              room.seats.some((s) => s.userId === currentUser.id)) && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setLiveTopicOpen((o) => !o)}
+                  aria-label={room.isLive ? 'إدارة البث المباشر' : 'بدء بث مباشر وإشعار المتابعين'}
+                  title={
+                    room.isLive
+                      ? 'البث المباشر نشط — اضغط للإرسال أو الإيقاف'
+                      : 'بدء بث مباشر وإشعار المتابعين الآن'
+                  }
+                  className={`h-8 px-2.5 rounded-full text-[11px] font-extrabold inline-flex items-center gap-1 border transition-colors cursor-pointer ${
+                    room.isLive
+                      ? 'bg-rose-600/95 hover:bg-rose-500 border-rose-300/70 text-white shadow-[0_0_12px_rgba(244,63,94,0.45)]'
+                      : 'bg-emerald-500/95 hover:bg-emerald-400 border-emerald-200/70 text-slate-950'
+                  }`}
+                >
+                  <Radio className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {room.isLive ? 'بث مباشر' : 'ابدأ البث'}
+                  </span>
+                </button>
+
+                {liveTopicOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setLiveTopicOpen(false)}
+                    />
+                    <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl bg-[#120D2E] border border-violet-400/50 p-3.5 shadow-2xl z-50 space-y-2.5 text-white">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-display font-extrabold flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 text-rose-400" />
+                          <span>إشعار البث المباشر</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setLiveTopicOpen(false)}
+                          className="w-6 h-6 rounded-lg hover:bg-white/10 flex items-center justify-center cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        أرسل إشعاراً فورياً داخل التطبيق لجميع متابعي الغرفة ومهتمي الغرف الشائعة.
+                      </p>
+                      <input
+                        type="text"
+                        value={liveTopicInput}
+                        onChange={(e) => setLiveTopicInput(e.target.value)}
+                        maxLength={85}
+                        placeholder="عنوان البث (اختياري): سهرة طرب ومسابقات..."
+                        className="w-full h-9 px-3 rounded-xl bg-white/10 border border-white/15 text-xs text-white placeholder:text-slate-400 focus:outline-none focus:border-emerald-400"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={liveActionBusy}
+                          onClick={async () => {
+                            setLiveActionBusy(true);
+                            try {
+                              await startRoomLiveBroadcast(room.id, liveTopicInput.trim());
+                              setLiveTopicInput('');
+                              setLiveTopicOpen(false);
+                            } finally {
+                              setLiveActionBusy(false);
+                            }
+                          }}
+                          className="flex-1 min-h-[38px] px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 text-xs font-extrabold cursor-pointer"
+                        >
+                          {liveActionBusy
+                            ? 'جارٍ الإرسال...'
+                            : room.isLive
+                            ? 'تحديث وإرسال إشعار البث'
+                            : 'بدء البث وإشعار المتابعين'}
+                        </button>
+                        {room.isLive &&
+                          (room.ownerId === currentUser.id || currentUser.id === '900') && (
+                            <button
+                              type="button"
+                              disabled={liveActionBusy}
+                              onClick={async () => {
+                                setLiveActionBusy(true);
+                                try {
+                                  await stopRoomLiveBroadcast(room.id);
+                                  setLiveTopicOpen(false);
+                                } finally {
+                                  setLiveActionBusy(false);
+                                }
+                              }}
+                              className="min-h-[38px] px-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 text-xs font-bold cursor-pointer"
+                            >
+                              إيقاف
+                            </button>
+                          )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {room.ownerId !== currentUser.id && (
+              <button
+                type="button"
+                onClick={() => void toggleFollowRoom(room.id)}
+                aria-label={
+                  followedRoomIds.includes(room.id)
+                    ? 'إلغاء متابعة الغرفة'
+                    : 'متابعة الغرفة لتلقي إشعارات البث المباشر'
+                }
+                title={
+                  followedRoomIds.includes(room.id)
+                    ? 'تتابع هذه الغرفة · تصلك تنبيهات البث'
+                    : 'متابعة الغرفة لتصلك تنبيهات البث المباشر'
+                }
+                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  followedRoomIds.includes(room.id)
+                    ? 'bg-emerald-500/90 border-emerald-200/80 text-slate-950'
+                    : 'bg-[#1E293B] hover:bg-violet-600/80 border-white/25 text-white'
+                }`}
+              >
+                {followedRoomIds.includes(room.id) ? (
+                  <BellRing className="w-3.5 h-3.5" />
+                ) : (
+                  <Bell className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setInviteModalOpen(true)}
+              aria-label="دعوة الأصدقاء للغرفة"
+              title="إنشاء ومشاركة رابط دعوة للغرفة"
+              className="group relative w-8 h-8 rounded-full p-[1.5px] overflow-hidden flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(56,189,248,0.4)] transition-transform active:scale-95"
+            >
+              <span aria-hidden="true" className="pointer-events-none absolute -inset-1/2 animate-white-purple-ring" />
+              <span className="relative z-10 w-full h-full rounded-full bg-[#1E293B] group-hover:bg-sky-600/80 text-sky-200 group-hover:text-white flex items-center justify-center transition-colors">
+                <Share2 className="w-3.5 h-3.5" />
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setControlSheet('quick-menu')}
@@ -1048,6 +1210,13 @@ export const LiveRoomView: React.FC = () => {
             })}
           </div>
         </div>
+
+        {/* Real-Time WebSocket Room Interaction Live Chart Card */}
+        {!luckyGamesOpen && !giftDrawerOpen && (
+          <div className="room-sleep-stage shrink-0 pt-0.5">
+            <RoomEngagementCard room={room} variant="inline" />
+          </div>
+        )}
 
         {/* Pre-Sleep 10-Second Calm Warning Banner */}
         <AnimatePresence>
@@ -1666,7 +1835,9 @@ export const LiveRoomView: React.FC = () => {
                     { id: 'fruit', label: 'الفواكه', bg: 'from-purple-700 to-indigo-950', image: GAME_FRUIT_ICON_PATH },
                     { id: 'wheel', label: 'الخضروات', bg: 'from-indigo-700 to-purple-950', image: GAME_FOODIE_ICON_PATH },
                     { id: 'dice', label: `نرد (×${room.diceCount ?? 1})`, bg: 'from-amber-400 to-orange-600', icon: Dices },
-                    { id: 'agency', label: 'شحن الوكالة', bg: 'from-emerald-400 to-emerald-700', icon: Coins },
+                    ...(isApprovedAgent
+                      ? [{ id: 'agency', label: 'شحن الوكالة', bg: 'from-emerald-400 to-emerald-700', icon: Coins }]
+                      : []),
                     { id: 'gather', label: 'جمع', bg: 'from-teal-400 to-cyan-700', icon: Flag },
                     { id: 'broadcast', label: 'البث', bg: 'from-sky-400 to-blue-700', icon: Megaphone },
                     { id: 'pk', label: 'PK', bg: 'from-violet-500 via-fuchsia-500 to-rose-500', icon: Swords },
@@ -2218,6 +2389,13 @@ export const LiveRoomView: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <InviteFriendsModal
+        open={inviteModalOpen}
+        roomId={room.id}
+        roomTitle={room.title}
+        onClose={() => setInviteModalOpen(false)}
+      />
     </div>
   );
 };

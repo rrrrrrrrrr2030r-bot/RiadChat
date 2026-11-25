@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, CheckCheck, MessageCircle, Send, ShieldCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { AVATAR_AHMED_PATH, AVATAR_NAWAF_PATH, AVATAR_RIAD_PATH } from '../data/seedData';
+import { AVATAR_RIAD_PATH } from '../data/seedData';
 
 interface ThreadMessage {
   id: string;
@@ -23,7 +23,7 @@ interface ChatThread {
 const INITIAL_THREADS: ChatThread[] = [
   {
     id: 'th-1',
-    userId: '10',
+    userId: '900',
     name: 'إدارة رياض الرسمية',
     avatar: AVATAR_RIAD_PATH,
     role: 'إشعارات النظام',
@@ -32,47 +32,15 @@ const INITIAL_THREADS: ChatThread[] = [
       {
         id: 'tm-1',
         fromMe: false,
-        text: 'مرحباً بك في تطبيق رياض شات! بونص الشحن +25% مفعّل الآن في قسم الوكالات.',
-        time: '03:45 م',
-      },
-    ],
-  },
-  {
-    id: 'th-2',
-    userId: '200016',
-    name: 'الوكيل أحمد',
-    avatar: AVATAR_AHMED_PATH,
-    role: 'وكيل شحن معتمد',
-    unread: 2,
-    messages: [
-      {
-        id: 'tm-2',
-        fromMe: false,
-        text: 'أهلاً، تم تفعيل باقات الشحن السريع لحسابك — تواصل معي لأي تحويل فوري.',
-        time: '03:10 م',
-      },
-    ],
-  },
-  {
-    id: 'th-3',
-    userId: '51115',
-    name: 'وكالة نواف للشحن',
-    avatar: AVATAR_NAWAF_PATH,
-    role: 'عميد الوكلاء',
-    unread: 0,
-    messages: [
-      {
-        id: 'tm-3',
-        fromMe: false,
-        text: 'تفضل بزيارة غرفتنا الصوتية للمشاركة في سحوبات الليلة!',
-        time: 'أمس',
+        text: 'مرحباً بك في الانطلاقة الرسمية لتطبيق رياض شات! يمكنك إنشاء غرفتك الصوتية أو التواصل مع الإدارة الرسمية في أي وقت.',
+        time: 'الآن',
       },
     ],
   },
 ];
 
 export const MessagesView: React.FC = () => {
-  const { state, setActiveTab } = useApp();
+  const { state, isApprovedAgent, setActiveTab, openWallet } = useApp();
   const [threads, setThreads] = useState<ChatThread[]>(INITIAL_THREADS);
   const [selectedId, setSelectedId] = useState<string>(INITIAL_THREADS[0].id);
   const [replyInput, setReplyInput] = useState('');
@@ -121,7 +89,7 @@ export const MessagesView: React.FC = () => {
         </div>
         <button
           type="button"
-          onClick={() => setActiveTab('agencies')}
+          onClick={() => (isApprovedAgent ? setActiveTab('agencies') : openWallet('gold'))}
           className="px-3.5 py-2 rounded-full bg-[#15D16B] hover:bg-[#12B95E] text-white text-xs font-bold cursor-pointer shrink-0"
         >
           شحن الآن
